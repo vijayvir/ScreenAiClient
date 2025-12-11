@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: ScreenAI-Client
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    service: DEBUG
+    controller: DEBUG
+    config: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ScreenAI Client Configuration
+screenai:
+  server:
+    # Connect to your ScreenAI-Server instance
+    # Default: ws://localhost:8080/screenshare
+    # Override with environment variable: SCREENAI_SERVER_URL
+    url: ws://localhost:8080/screenshare
+
+    # Reconnection settings
+    reconnect-attempts: 3
+    reconnect-delay: 5000  # milliseconds
+
+  video:
+    # Video capture settings
+    frame-rate: 30  # FPS
+    bitrate: 2500   # kbps (kilobits per second)
+    quality: high   # high, medium, low
+
+  performance:
+    # Monitor system performance
+    monitor-cpu: true
+    monitor-memory: true
+    monitor-network: true
+
