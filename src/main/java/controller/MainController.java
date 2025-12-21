@@ -2,8 +2,20 @@ package controller;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
 import javafx.application.Platform;
+import javafx.animation.FadeTransition;
+import javafx.animation.TranslateTransition;
+import javafx.animation.ParallelTransition;
+import javafx.util.Duration;
+import javafx.geometry.Pos;
+import javafx.stage.Stage;
+import javafx.scene.Scene;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -64,11 +76,18 @@ public class MainController {
     @FXML private Label latencyLabel;
     @FXML private Label qualityLabel;
     @FXML private Button disconnectViewerButton;
+    @FXML private ImageView videoImageView;  // ImageView for displaying decoded video frames
+    @FXML private VBox videoPlaceholder;      // Placeholder shown when no video
 
     // Controllers
     private HostController hostController;
     private ViewerController viewerController;
     private final ExecutorService executorService = Executors.newFixedThreadPool(5);
+    
+    // Current role state - client can only be HOST or VIEWER, not both
+    private enum ClientRole { NONE, HOST, VIEWER }
+    private ClientRole currentRole = ClientRole.NONE;
+    private boolean roleActive = false;  // True when connected as host or viewer
 
     @FXML
     public void initialize() {
@@ -207,33 +226,88 @@ public class MainController {
         });
 
         // Disconnect button
-        disconnectViewerButton.setOnAction(e -> viewerController.disconnect());
+        disconnectViewerButton.setOnAction(e -> {
+            viewerController.disconnect();
+            // Show placeholder when disconnected
+            if (videoPlaceholder != null) {
+                videoPlaceholder.setVisible(true);
+            }
+            if (videoImageView != null) {
+                videoImageView.setImage(null);
+            }
+        });
+        
+        // Connect ImageView to ViewerController for video display
+        if (videoImageView != null) {
+            viewerController.setVideoImageView(videoImageView);
+            
+            // Set callback to hide placeholder when video starts
+            viewerController.setOnImageUpdate(image -> {
+                Platform.runLater(() -> {
+                    if (image != null && videoPlaceholder != null) {
+                        videoPlaceholder.setVisible(false);
+                    }
+                });
+            });
+            
+            System.out.println("✅ ImageView connected to ViewerController");
+        } else {
+            System.out.println("⚠️ videoImageView is null - video display won't work");
+        }
     }
 
     private void switchToHost() {
+        // Check if currently active as viewer - must disconnect first
+        if (currentRole == ClientRole.VIEWER && roleActive) {
+            System.out.println("⚠️ Cannot switch to Host while connected as Viewer");
+            // Show warning and revert selection
+            Platform.runLater(() -> {
+                viewerRadio.setSelected(true);
+                updateHostStatus("⚠️ Disconnect from viewer first!", "#f44336");
+            });
+            return;
+        }
+        
+        // Disconnect viewer if any residual connection
+        if (viewerController != null) {
+            viewerController.disconnect();
+        }
+        
         hostSection.setVisible(true);
         hostSection.setManaged(true);
         viewerSection.setVisible(false);
         viewerSection.setManaged(false);
 
-        if (viewerController != null) {
-            viewerController.disconnect();
-        }
-
-        updateHostStatus("ℹ️ Ready to connect", "#2196F3");
+        currentRole = ClientRole.HOST;
+        updateHostStatus("ℹ️ Ready to connect as Host", "#2196F3");
+        System.out.println("🔴 Switched to HOST mode");
     }
 
     private void switchToViewer() {
+        // Check if currently active as host - must disconnect first
+        if (currentRole == ClientRole.HOST && roleActive) {
+            System.out.println("⚠️ Cannot switch to Viewer while connected as Host");
+            // Show warning and revert selection
+            Platform.runLater(() -> {
+                hostRadio.setSelected(true);
+                updateViewerStatus("⚠️ Stop streaming and disconnect first!", "#f44336");
+            });
+            return;
+        }
+        
+        // Disconnect host if any residual connection
+        if (hostController != null) {
+            hostController.disconnect();
+        }
+        
         hostSection.setVisible(false);
         hostSection.setManaged(false);
         viewerSection.setVisible(true);
         viewerSection.setManaged(true);
 
-        if (hostController != null) {
-            hostController.stopStreaming();
-        }
-
-        updateViewerStatus("ℹ️ Ready to connect", "#2196F3");
+        currentRole = ClientRole.VIEWER;
+        updateViewerStatus("ℹ️ Ready to connect as Viewer", "#2196F3");
+        System.out.println("🔵 Switched to VIEWER mode");
     }
 
     private void connectAsHost() {
@@ -334,32 +408,48 @@ public class MainController {
     }
 
     // Connection status update
-    private void updateConnectionStatus(boolean isConnected, String role) {
+    private void updateConnectionStatus(boolean connected, String role) {
         Platform.runLater(() -> {
             if (role.equals("host")) {
-                if (isConnected) {
+                roleActive = connected;
+                // Disable viewer radio when connected as host
+                viewerRadio.setDisable(connected);
+                
+                if (connected) {
                     hostConnectButton.setDisable(true);
                     startButton.setDisable(false);
                     hostConnectionStatusLabel.setText("✅ Connected");
                     hostConnectionStatusLabel.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
+                    // Show success toast
+                    showToast("Connected to server as Host!", "success");
                 } else {
                     hostConnectButton.setDisable(false);
                     startButton.setDisable(true);
                     stopButton.setDisable(true);
                     hostConnectionStatusLabel.setText("🔴 Disconnected");
                     hostConnectionStatusLabel.setStyle("-fx-text-fill: #f44336; -fx-font-weight: bold;");
+                    currentRole = ClientRole.NONE;
+                    showToast("Disconnected from server", "warning");
                 }
             } else if (role.equals("viewer")) {
-                if (isConnected) {
+                roleActive = connected;
+                // Disable host radio when connected as viewer
+                hostRadio.setDisable(connected);
+                
+                if (connected) {
                     viewerConnectButton.setDisable(true);
                     joinRoomButton.setDisable(false);
                     connectionStatusLabel.setText("✅ Connected");
                     connectionStatusLabel.setStyle("-fx-text-fill: #4CAF50;");
+                    // Show success toast
+                    showToast("Connected to server as Viewer!", "success");
                 } else {
                     viewerConnectButton.setDisable(false);
                     joinRoomButton.setDisable(true);
                     connectionStatusLabel.setText("❌ Disconnected");
                     connectionStatusLabel.setStyle("-fx-text-fill: #f44336;");
+                    currentRole = ClientRole.NONE;
+                    showToast("Disconnected from server", "warning");
                 }
             }
         });
@@ -372,5 +462,117 @@ public class MainController {
     public void enableStopButton(boolean enable) {
         Platform.runLater(() -> stopButton.setDisable(!enable));
     }
+    
+    /**
+     * Show a toast notification message
+     * @param message The message to display
+     * @param type "success", "error", "info", or "warning"
+     */
+    public void showToast(String message, String type) {
+        Platform.runLater(() -> {
+            try {
+                // Get the scene from any existing node
+                Scene scene = hostSection != null ? hostSection.getScene() : 
+                              (viewerSection != null ? viewerSection.getScene() : null);
+                
+                if (scene == null || scene.getRoot() == null) {
+                    System.out.println("🔔 TOAST [" + type + "]: " + message);
+                    return;
+                }
+                
+                // Create toast label
+                Label toastLabel = new Label(message);
+                toastLabel.setWrapText(true);
+                toastLabel.setMaxWidth(400);
+                
+                // Style based on type
+                String bgColor, textColor, emoji;
+                switch (type.toLowerCase()) {
+                    case "success":
+                        bgColor = "#4CAF50";
+                        textColor = "white";
+                        emoji = "✅ ";
+                        break;
+                    case "error":
+                        bgColor = "#f44336";
+                        textColor = "white";
+                        emoji = "❌ ";
+                        break;
+                    case "warning":
+                        bgColor = "#ff9800";
+                        textColor = "white";
+                        emoji = "⚠️ ";
+                        break;
+                    default:  // info
+                        bgColor = "#2196F3";
+                        textColor = "white";
+                        emoji = "ℹ️ ";
+                        break;
+                }
+                
+                toastLabel.setText(emoji + message);
+                toastLabel.setStyle(
+                    "-fx-background-color: " + bgColor + ";" +
+                    "-fx-text-fill: " + textColor + ";" +
+                    "-fx-padding: 15 25 15 25;" +
+                    "-fx-background-radius: 8;" +
+                    "-fx-font-size: 14px;" +
+                    "-fx-font-weight: bold;" +
+                    "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 10, 0, 0, 3);"
+                );
+                
+                // Create container for positioning
+                StackPane toastContainer = new StackPane(toastLabel);
+                toastContainer.setAlignment(Pos.BOTTOM_CENTER);
+                toastContainer.setPickOnBounds(false);
+                toastContainer.setMouseTransparent(true);
+                
+                // Add to scene
+                if (scene.getRoot() instanceof StackPane) {
+                    ((StackPane) scene.getRoot()).getChildren().add(toastContainer);
+                } else if (scene.getRoot() instanceof javafx.scene.layout.Pane) {
+                    ((javafx.scene.layout.Pane) scene.getRoot()).getChildren().add(toastContainer);
+                } else {
+                    // Just log if we can't add to scene
+                    System.out.println("🔔 TOAST [" + type + "]: " + message);
+                    return;
+                }
+                
+                // Position at bottom
+                toastLabel.setTranslateY(50);
+                toastLabel.setOpacity(0);
+                
+                // Animate in
+                FadeTransition fadeIn = new FadeTransition(Duration.millis(300), toastLabel);
+                fadeIn.setFromValue(0);
+                fadeIn.setToValue(1);
+                
+                TranslateTransition slideIn = new TranslateTransition(Duration.millis(300), toastLabel);
+                slideIn.setFromY(50);
+                slideIn.setToY(-30);
+                
+                ParallelTransition showAnimation = new ParallelTransition(fadeIn, slideIn);
+                
+                // Animate out after delay
+                FadeTransition fadeOut = new FadeTransition(Duration.millis(300), toastLabel);
+                fadeOut.setFromValue(1);
+                fadeOut.setToValue(0);
+                fadeOut.setDelay(Duration.seconds(3));
+                
+                fadeOut.setOnFinished(e -> {
+                    if (scene.getRoot() instanceof javafx.scene.layout.Pane) {
+                        ((javafx.scene.layout.Pane) scene.getRoot()).getChildren().remove(toastContainer);
+                    }
+                });
+                
+                showAnimation.play();
+                fadeOut.play();
+                
+                System.out.println("🔔 TOAST [" + type + "]: " + message);
+                
+            } catch (Exception e) {
+                System.out.println("🔔 TOAST [" + type + "]: " + message);
+            }
+        });
+    }
 }
-

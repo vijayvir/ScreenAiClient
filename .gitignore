@@ -36,4 +36,4 @@ build/
 .vscode/
 
 ### Mac OS ###
-.DS_Store
+.DS_Store.mvn/apache-maven-3.9.6/

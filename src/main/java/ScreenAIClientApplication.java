@@ -18,6 +18,14 @@ public class ScreenAIClientApplication {
      * Start Spring context for dependency injection
      */
     public static void startSpringContext() {
+        // Enable FFmpeg debug logging for troubleshooting encoder issues
+        try {
+            org.bytedeco.ffmpeg.global.avutil.av_log_set_level(org.bytedeco.ffmpeg.global.avutil.AV_LOG_DEBUG);
+            org.bytedeco.javacv.FFmpegLogCallback.set();
+            System.out.println("✅ FFmpeg debug logging enabled");
+        } catch (Throwable t) {
+            System.out.println("⚠️ Could not enable FFmpeg debug logging: " + t.getMessage());
+        }
         springContext = new AnnotationConfigApplicationContext(ScreenAIClientApplication.class);
         System.out.println("✅ Spring Context initialized for dependency injection");
     }
