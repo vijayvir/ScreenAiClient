@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * NVIDIA NVENC Hardware-Accelerated Encoder
+ * Requires NVIDIA GPU with NVENC support (GTX 600+, RTX series)
  */
 public class NvencEncoder implements VideoEncoderStrategy {
     
@@ -16,15 +17,15 @@ public class NvencEncoder implements VideoEncoderStrategy {
         try {
             recorder.setVideoCodecName("h264_nvenc");
             
-            // NVENC low-latency options
-            recorder.setVideoOption("preset", "p1"); // Fastest preset (P1-P7)
-            recorder.setVideoOption("tune", "ll"); // Low latency
-            recorder.setVideoOption("rc", "cbr"); // Constant bitrate
-            recorder.setVideoOption("delay", "0"); // No B-frame delay
-            recorder.setVideoOption("zerolatency", "1");
-            recorder.setVideoOption("strict_gop", "1"); // Strict GOP
+            // NVENC low-latency options (use only widely supported options)
+            recorder.setVideoOption("preset", "p1");        // Fastest preset (P1 = lowest latency)
+            recorder.setVideoOption("tune", "ll");          // Low latency tuning
+            recorder.setVideoOption("profile", "baseline"); // Simple profile for speed
+            recorder.setVideoOption("rc", "cbr");           // Constant bitrate for consistency
+            recorder.setVideoOption("delay", "0");          // Zero encoding delay
+            recorder.setVideoOption("zerolatency", "1");    // Force zero latency mode
             
-            logger.info("✅ Configured NVENC hardware encoder");
+            logger.info("✅ Configured NVENC hardware encoder (NVIDIA GPU)");
             return true;
         } catch (Exception e) {
             logger.warn("❌ NVENC configuration failed: {}", e.getMessage());

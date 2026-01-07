@@ -5,7 +5,6 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.List;
-import org.springframework.stereotype.Service;
 
 import model.ScreenSource;
 import model.ScreenSource.SourceType;
@@ -14,7 +13,6 @@ import model.ScreenSource.SourceType;
  * Screen Source Detector Service
  * Detects available screens and windows for capture
  */
-@Service
 public class ScreenSourceDetector {
 
     /**

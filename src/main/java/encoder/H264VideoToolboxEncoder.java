@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * macOS Hardware-Accelerated Encoder using VideoToolbox
+ * Provides significant CPU reduction through GPU encoding
  */
 public class H264VideoToolboxEncoder implements VideoEncoderStrategy {
     
@@ -17,10 +18,12 @@ public class H264VideoToolboxEncoder implements VideoEncoderStrategy {
             recorder.setVideoCodecName("h264_videotoolbox");
             
             // VideoToolbox specific options for low latency
-            recorder.setVideoOption("realtime", "1");
-            recorder.setVideoOption("allow_sw", "0"); // Force hardware
+            recorder.setVideoOption("realtime", "1");       // Enable realtime mode
+            recorder.setVideoOption("allow_sw", "1");       // Allow software fallback if GPU busy
+            recorder.setVideoOption("profile", "baseline"); // Simpler profile = faster encoding
+            recorder.setVideoOption("level", "3.1");        // Common compatibility level
             
-            logger.info("✅ Configured VideoToolbox hardware encoder");
+            logger.info("✅ Configured VideoToolbox hardware encoder (macOS GPU)");
             return true;
         } catch (Exception e) {
             logger.warn("❌ VideoToolbox configuration failed: {}", e.getMessage());

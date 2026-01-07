@@ -126,6 +126,9 @@ public class MainController {
             this::updateViewerCount,
             (isConnected) -> updateConnectionStatus(isConnected, "host")
         );
+        
+        // Set streaming state callback to enable/disable stop button
+        hostController.setOnStreamingStateUpdate(this::onStreamingStateChanged);
 
         viewerController = new ViewerController(
             (msg) -> updateViewerStatus(msg, "#2196F3"),
@@ -461,6 +464,27 @@ public class MainController {
 
     public void enableStopButton(boolean enable) {
         Platform.runLater(() -> stopButton.setDisable(!enable));
+    }
+    
+    /**
+     * Called when streaming starts or stops
+     * @param isStreaming true when streaming starts, false when it stops
+     */
+    private void onStreamingStateChanged(Boolean isStreaming) {
+        Platform.runLater(() -> {
+            System.out.println("🎬 Streaming state changed: " + isStreaming);
+            if (isStreaming) {
+                // Streaming started - enable stop, disable start
+                stopButton.setDisable(false);
+                startButton.setDisable(true);
+                hostConnectButton.setDisable(true);  // Can't disconnect while streaming
+            } else {
+                // Streaming stopped - disable stop, enable start
+                stopButton.setDisable(true);
+                startButton.setDisable(false);
+                hostConnectButton.setDisable(false);  // Can disconnect now
+            }
+        });
     }
     
     /**

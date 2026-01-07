@@ -15,7 +15,6 @@ import java.util.function.Consumer;
 /**
  * Host Controller
  * Manages presenter/host role - screen capture and streaming
- * Note: Instantiated manually, not as Spring bean
  */
 public class HostController {
     private ServerConnectionService serverConnection;
@@ -23,7 +22,7 @@ public class HostController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executorService = Executors.newFixedThreadPool(3);
-    private final ScheduledExecutorService metricsExecutor = Executors.newScheduledThreadPool(1);
+    private ScheduledExecutorService metricsExecutor;  // Recreated each streaming session
 
     private boolean isStreaming = false;
     private String roomId;
@@ -36,6 +35,8 @@ public class HostController {
     private final Consumer<String> onPerformanceUpdate;
     private final Consumer<Integer> onViewerCountUpdate;
     private final Consumer<Boolean> onConnectionStatusUpdate;
+    private Consumer<Boolean> onStreamingStateUpdate;  // Called when streaming starts/stops
+    
     public HostController(Consumer<String> statusCallback,
                          Consumer<String> performanceCallback,
                          Consumer<Integer> viewerCountCallback,
@@ -44,6 +45,13 @@ public class HostController {
         this.onPerformanceUpdate = performanceCallback;
         this.onViewerCountUpdate = viewerCountCallback;
         this.onConnectionStatusUpdate = connectionCallback;
+    }
+    
+    /**
+     * Set callback for streaming state changes (for enabling/disabling stop button)
+     */
+    public void setOnStreamingStateUpdate(Consumer<Boolean> callback) {
+        this.onStreamingStateUpdate = callback;
     }
 
     /**
@@ -154,23 +162,44 @@ public class HostController {
      * Stop screen sharing
      */
     public void stopStreaming() {
+        System.out.println("🛑 [HOST] stopStreaming() called, isStreaming=" + isStreaming);
+        
         if (!isStreaming) {
+            System.out.println("⚠️ [HOST] Not streaming, nothing to stop");
             return;
         }
 
         isStreaming = false;
 
+        // Stop screen capture first
         if (screenCaptureService != null) {
+            System.out.println("🛑 [HOST] Stopping screen capture service...");
             screenCaptureService.stop();
+            screenCaptureService = null;
+            System.out.println("✅ [HOST] Screen capture service stopped");
         }
 
-        if (serverConnection != null) {
+        // Send leave room message
+        if (serverConnection != null && serverConnection.isConnected()) {
+            System.out.println("📤 [HOST] Sending leave-room message...");
             serverConnection.sendText("{\"type\":\"leave-room\"}");
         }
 
-        metricsExecutor.shutdown();
+        // Shutdown metrics executor
+        if (metricsExecutor != null && !metricsExecutor.isShutdown()) {
+            metricsExecutor.shutdown();
+        }
+        
+        // Notify that streaming has stopped (disables stop button)
+        if (onStreamingStateUpdate != null) {
+            onStreamingStateUpdate.accept(false);
+        }
+        
         onStatusUpdate.accept("⏹ Streaming stopped");
         viewerCount = 0;
+        onViewerCountUpdate.accept(0);
+        
+        System.out.println("✅ [HOST] Streaming fully stopped");
     }
 
     /**
@@ -269,8 +298,16 @@ public class HostController {
             screenCaptureService = new ScreenCaptureService(this::sendVideoFrame);
             screenCaptureService.start();
 
-            onStatusUpdate.accept("🎥 Streaming started");
+            onStatusUpdate.accept("🎥 Streaming started - Room: " + roomId);
+            
+            // Notify that streaming has started (enables stop button)
+            if (onStreamingStateUpdate != null) {
+                onStreamingStateUpdate.accept(true);
+            }
 
+            // Create new metrics executor (previous one may have been shutdown)
+            metricsExecutor = Executors.newScheduledThreadPool(1);
+            
             // Start metrics updater
             startMetricsUpdater();
 

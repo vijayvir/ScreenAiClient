@@ -1,11 +1,13 @@
 package encoder;
 
+import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.javacv.FFmpegFrameRecorder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Software H.264 Encoder (CPU-based fallback)
+ * Optimized for ultra-low latency screen sharing
  */
 public class LibX264Encoder implements VideoEncoderStrategy {
     
@@ -14,18 +16,19 @@ public class LibX264Encoder implements VideoEncoderStrategy {
     @Override
     public boolean configure(FFmpegFrameRecorder recorder) {
         try {
-            recorder.setVideoCodecName("libx264");
+            // Use codec ID instead of name for better compatibility
+            recorder.setVideoCodec(avcodec.AV_CODEC_ID_H264);
             
-            // Ultra-low latency software encoding
+            // Ultra-low latency software encoding settings
+            // Only use options that are widely supported
             recorder.setVideoOption("preset", "ultrafast");
             recorder.setVideoOption("tune", "zerolatency");
-            recorder.setVideoOption("bf", "0"); // No B-frames
-            recorder.setVideoOption("refs", "1"); // Single reference frame
-            recorder.setVideoOption("rc-lookahead", "0"); // No lookahead
-            recorder.setVideoOption("sliced-threads", "1"); // Use sliced threads
-            recorder.setVideoOption("sync-lookahead", "0"); // No sync lookahead
             
-            logger.info("✅ Configured libx264 software encoder");
+            // These options improve latency without compatibility issues
+            recorder.setVideoOption("profile", "baseline");  // Simpler profile = faster
+            recorder.setVideoOption("level", "3.1");         // Common level
+            
+            logger.info("✅ Configured libx264 software encoder (ultrafast + zerolatency)");
             return true;
         } catch (Exception e) {
             logger.warn("❌ libx264 configuration failed: {}", e.getMessage());
