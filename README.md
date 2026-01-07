@@ -21,7 +21,6 @@
 **ScreenAI Client** is a professional desktop application enabling real-time screen sharing with two distinct roles:
 
 ### 🔴 **HOST Mode (Presenter)**
-- Capture screen using **AVFoundation** (macOS) via JavaCV
 - Encode to **H.264/MPEG-TS** using FFmpeg with hardware acceleration support
 - Stream at configurable FPS with ultrafast/zerolatency preset
 - Monitor streaming stats (frames sent, data transferred, viewer count)
@@ -55,7 +54,7 @@
 ### 1. Clone and Build
 
 ```bash
-git clone https://github.com/rkumar1001/ScreenAI-Client.git
+git clone https://github.com/vijayvir/ScreenAiClient.git
 cd ScreenAI-Client
 ```
 
