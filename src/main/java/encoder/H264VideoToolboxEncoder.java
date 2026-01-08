@@ -1,16 +1,12 @@
 package encoder;
 
 import org.bytedeco.javacv.FFmpegFrameRecorder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * macOS Hardware-Accelerated Encoder using VideoToolbox
  * Provides significant CPU reduction through GPU encoding
  */
 public class H264VideoToolboxEncoder implements VideoEncoderStrategy {
-    
-    private static final Logger logger = LoggerFactory.getLogger(H264VideoToolboxEncoder.class);
     
     @Override
     public boolean configure(FFmpegFrameRecorder recorder) {
@@ -23,10 +19,10 @@ public class H264VideoToolboxEncoder implements VideoEncoderStrategy {
             recorder.setVideoOption("profile", "baseline"); // Simpler profile = faster encoding
             recorder.setVideoOption("level", "3.1");        // Common compatibility level
             
-            logger.info("✅ Configured VideoToolbox hardware encoder (macOS GPU)");
+            System.out.println("✅ Configured VideoToolbox hardware encoder (macOS GPU)");
             return true;
         } catch (Exception e) {
-            logger.warn("❌ VideoToolbox configuration failed: {}", e.getMessage());
+            System.err.println("❌ VideoToolbox configuration failed: " + e.getMessage());
             return false;
         }
     }

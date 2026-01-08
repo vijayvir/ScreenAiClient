@@ -302,49 +302,82 @@ public class ScreenCaptureService {
      * Windows screen capture using GDI
      */
     private void startWindowsCapture() throws Exception {
-        System.out.println("Configuring GDI screen capture for Windows...");
+        System.out.println("🪟 Configuring GDI screen capture for Windows...");
         
         Rectangle bounds = getScreenBounds();
-        
-        // Try different Windows capture methods
-        String[][] captureConfigs = {
-            {"desktop", "gdigrab"},           // Standard desktop capture
-            {"screen-capture-recorder", "dshow"}, // Alternative with screen-capture-recorder
-        };
+        System.out.println("Screen bounds: " + bounds.width + "x" + bounds.height);
         
         Exception lastException = null;
         
-        for (String[] config : captureConfigs) {
-            try {
-                String device = config[0];
-                String format = config[1];
-                
-                System.out.println("Trying Windows capture: " + format + " with " + device);
-                grabber = new FFmpegFrameGrabber(device);
-                grabber.setFormat(format);
-                grabber.setFrameRate(targetFPS);
-                
-                if (format.equals("gdigrab")) {
-                    grabber.setOption("draw_mouse", "1");
-                    grabber.setOption("offset_x", "0");
-                    grabber.setOption("offset_y", "0");
-                    grabber.setImageWidth(bounds.width);
-                    grabber.setImageHeight(bounds.height);
-                }
-                
-                grabber.start();
-                System.out.println("SUCCESS: Using " + format + " with " + device);
-                return;
-            } catch (Exception e) {
-                lastException = e;
-                System.out.println(config[1] + " failed: " + e.getMessage());
-                cleanupGrabber();
+        // Try GDIGrab (most common and reliable on Windows)
+        try {
+            System.out.println("Trying GDIGrab desktop capture...");
+            grabber = new FFmpegFrameGrabber("desktop");
+            grabber.setFormat("gdigrab");
+            grabber.setFrameRate(targetFPS);
+            
+            // GDIGrab-specific options
+            grabber.setOption("draw_mouse", "1");      // Capture mouse cursor
+            grabber.setOption("offset_x", "0");        // Start from left edge
+            grabber.setOption("offset_y", "0");        // Start from top edge
+            
+            // Set capture resolution
+            if (bounds.width > 0 && bounds.height > 0) {
+                grabber.setImageWidth(bounds.width);
+                grabber.setImageHeight(bounds.height);
             }
+            
+            grabber.start();
+            System.out.println("✅ SUCCESS: GDIGrab desktop capture started");
+            return;
+        } catch (Exception e) {
+            lastException = e;
+            System.out.println("❌ GDIGrab failed: " + e.getMessage());
+            cleanupGrabber();
         }
         
+        // Try GDIGrab with explicit video size
+        try {
+            System.out.println("Trying GDIGrab with explicit video_size...");
+            grabber = new FFmpegFrameGrabber("desktop");
+            grabber.setFormat("gdigrab");
+            grabber.setFrameRate(targetFPS);
+            grabber.setOption("draw_mouse", "1");
+            grabber.setOption("video_size", bounds.width + "x" + bounds.height);
+            
+            grabber.start();
+            System.out.println("✅ SUCCESS: GDIGrab with video_size started");
+            return;
+        } catch (Exception e) {
+            lastException = e;
+            System.out.println("❌ GDIGrab with video_size failed: " + e.getMessage());
+            cleanupGrabber();
+        }
+        
+        // Try DirectShow as fallback (requires screen-capture-recorder)
+        try {
+            System.out.println("Trying DirectShow with screen-capture-recorder...");
+            grabber = new FFmpegFrameGrabber("screen-capture-recorder");
+            grabber.setFormat("dshow");
+            grabber.setFrameRate(targetFPS);
+            
+            grabber.start();
+            System.out.println("✅ SUCCESS: DirectShow screen-capture-recorder started");
+            return;
+        } catch (Exception e) {
+            System.out.println("❌ DirectShow failed: " + e.getMessage());
+            cleanupGrabber();
+        }
+        
+        // All methods failed
         throw new RuntimeException(
-            "Could not start screen capture on Windows.\n" +
-            "Please ensure FFmpeg is properly installed.\n" +
+            "❌ Could not start screen capture on Windows.\n\n" +
+            "Possible solutions:\n" +
+            "1. Run the application as Administrator\n" +
+            "2. Update your graphics drivers\n" +
+            "3. Try setting display scaling to 100%\n" +
+            "4. Install screen-capture-recorder from:\n" +
+            "   https://github.com/rdp/screen-capture-recorder-to-video-windows-free\n\n" +
             "Last error: " + (lastException != null ? lastException.getMessage() : "unknown"),
             lastException
         );
