@@ -12,9 +12,36 @@ public class NvencEncoder implements VideoEncoderStrategy {
     
     private static final Logger logger = LoggerFactory.getLogger(NvencEncoder.class);
     
+    /**
+     * Check if NVIDIA CUDA is available on this system
+     */
+    public static boolean isCudaAvailable() {
+        try {
+            // Check if nvcuda.dll (Windows) or libcuda.so (Linux) is loadable
+            String os = System.getProperty("os.name", "").toLowerCase();
+            String cudaLib = os.contains("windows") ? "nvcuda" : "cuda";
+            
+            System.loadLibrary(cudaLib);
+            logger.info("✅ CUDA library found: {}", cudaLib);
+            return true;
+        } catch (UnsatisfiedLinkError e) {
+            logger.debug("CUDA not available: {}", e.getMessage());
+            return false;
+        } catch (Exception e) {
+            logger.debug("CUDA check failed: {}", e.getMessage());
+            return false;
+        }
+    }
+    
     @Override
     public boolean configure(FFmpegFrameRecorder recorder) {
         try {
+            // First verify CUDA is actually available
+            if (!isCudaAvailable()) {
+                logger.warn("❌ NVENC unavailable: CUDA drivers not found");
+                return false;
+            }
+            
             recorder.setVideoCodecName("h264_nvenc");
             
             // NVENC low-latency options (use only widely supported options)

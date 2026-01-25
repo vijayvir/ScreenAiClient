@@ -2,11 +2,9 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
-import application.ScreenAIClientApplication;
 import controller.MainController;
 import controller.DualModeMainController;
 import org.springframework.context.ConfigurableApplicationContext;
-import service.ServerConnectionService;
 import java.io.IOException;
 import java.util.List;
 

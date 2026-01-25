@@ -42,6 +42,7 @@ public class ViewerController {
     private ScheduledExecutorService metricsExecutor;
 
     private volatile boolean isConnected = false;
+    @SuppressWarnings("unused")
     private volatile boolean isWatchingStream = false;
     private volatile boolean isPlaying = false;
     private Thread playbackThread;
@@ -49,6 +50,7 @@ public class ViewerController {
     private String roomId;
     private final AtomicInteger frameCount = new AtomicInteger(0);
     private final AtomicLong totalBytesReceived = new AtomicLong(0);
+    @SuppressWarnings("unused")
     private long lastStatsTime = System.currentTimeMillis();
 
     // UI components (optional - set via setter)

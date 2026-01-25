@@ -2,9 +2,13 @@ package controller;
 
 import service.ServerConnectionService;
 import service.ScreenCaptureService;
+import service.TokenStorageService;
+import service.AuthenticationService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -15,10 +19,13 @@ import java.util.function.Consumer;
 /**
  * Host Controller
  * Manages presenter/host role - screen capture and streaming
+ * Now with authentication and room security support
  */
 public class HostController {
     private ServerConnectionService serverConnection;
     private ScreenCaptureService screenCaptureService;
+    private TokenStorageService tokenStorage;
+    private AuthenticationService authService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executorService = Executors.newFixedThreadPool(3);
@@ -26,9 +33,14 @@ public class HostController {
 
     private boolean isStreaming = false;
     private String roomId;
+    private String roomPassword;
+    private String accessCode;
     private int viewerCount = 0;
     private long frameCount = 0;
     private long startTime = 0;
+    
+    // Pending viewers waiting for approval
+    private final List<PendingViewer> pendingViewers = new ArrayList<>();
 
     // Callbacks
     private final Consumer<String> onStatusUpdate;
@@ -36,6 +48,7 @@ public class HostController {
     private final Consumer<Integer> onViewerCountUpdate;
     private final Consumer<Boolean> onConnectionStatusUpdate;
     private Consumer<Boolean> onStreamingStateUpdate;  // Called when streaming starts/stops
+    private Consumer<PendingViewer> onViewerRequest;  // Called when viewer requests to join
     
     public HostController(Consumer<String> statusCallback,
                          Consumer<String> performanceCallback,
@@ -45,6 +58,10 @@ public class HostController {
         this.onPerformanceUpdate = performanceCallback;
         this.onViewerCountUpdate = viewerCountCallback;
         this.onConnectionStatusUpdate = connectionCallback;
+        
+        // Initialize auth services
+        this.tokenStorage = new TokenStorageService();
+        this.authService = new AuthenticationService(tokenStorage);
     }
     
     /**
@@ -52,6 +69,34 @@ public class HostController {
      */
     public void setOnStreamingStateUpdate(Consumer<Boolean> callback) {
         this.onStreamingStateUpdate = callback;
+    }
+    
+    /**
+     * Set callback for viewer approval requests
+     */
+    public void setOnViewerRequest(Consumer<PendingViewer> callback) {
+        this.onViewerRequest = callback;
+    }
+    
+    /**
+     * Get the authentication service for external login handling
+     */
+    public AuthenticationService getAuthService() {
+        return authService;
+    }
+    
+    /**
+     * Get the token storage service
+     */
+    public TokenStorageService getTokenStorage() {
+        return tokenStorage;
+    }
+    
+    /**
+     * Check if user is authenticated
+     */
+    public boolean isAuthenticated() {
+        return authService.isAuthenticated();
     }
 
     /**
@@ -73,6 +118,16 @@ public class HostController {
             System.out.println("🏗️ Creating ServerConnectionService...");
             serverConnection = new ServerConnectionService(serverUrl);
             System.out.println("✅ ServerConnectionService created");
+            
+            // Set authentication token if available
+            tokenStorage.getAccessToken().ifPresent(token -> {
+                serverConnection.setAuthToken(token);
+                System.out.println("🔐 Auth token set for connection");
+            });
+            
+            // Update auth service base URL
+            String httpUrl = "http://" + serverHost + ":" + serverPort;
+            authService.setServerBaseUrl(httpUrl);
 
             // Set up handlers
             System.out.println("🔧 Setting up connection handlers...");
@@ -139,6 +194,15 @@ public class HostController {
      */
     public void startStreaming(String serverHost, int serverPort, String customRoomId,
                                String screenSource, String encoder) {
+        startStreaming(serverHost, serverPort, customRoomId, null, false, screenSource, encoder);
+    }
+    
+    /**
+     * Start screen sharing with password protection
+     */
+    public void startStreaming(String serverHost, int serverPort, String customRoomId, 
+                               String password, boolean requireApproval,
+                               String screenSource, String encoder) {
         if (serverConnection == null || !serverConnection.isConnected()) {
             onStatusUpdate.accept("⚠️ Not connected to server");
             return;
@@ -148,14 +212,101 @@ public class HostController {
         roomId = (customRoomId != null && !customRoomId.isEmpty()) ?
                  customRoomId :
                  "room-" + UUID.randomUUID().toString().substring(0, 8);
+        
+        this.roomPassword = password;
 
-        // Create room on server
-        String createRoomMsg = String.format(
-            "{\"type\":\"create-room\",\"roomId\":\"%s\"}",
-            roomId
-        );
-        serverConnection.sendText(createRoomMsg);
-        onStatusUpdate.accept("📍 Creating room: " + roomId);
+        // Create room on server with optional password
+        StringBuilder msgBuilder = new StringBuilder();
+        msgBuilder.append("{\"type\":\"create-room\",\"roomId\":\"").append(roomId).append("\"");
+        
+        if (password != null && !password.isEmpty()) {
+            msgBuilder.append(",\"password\":\"").append(escapeJson(password)).append("\"");
+        }
+        
+        if (requireApproval) {
+            msgBuilder.append(",\"requireApproval\":true");
+        }
+        
+        msgBuilder.append("}");
+        
+        serverConnection.sendText(msgBuilder.toString());
+        onStatusUpdate.accept("📍 Creating room: " + roomId + (password != null ? " 🔒" : ""));
+    }
+    
+    /**
+     * Escape JSON special characters
+     */
+    private String escapeJson(String input) {
+        if (input == null) return "";
+        return input
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
+    }
+    
+    /**
+     * Get the current room ID
+     */
+    public String getRoomId() {
+        return roomId;
+    }
+    
+    /**
+     * Get the room access code (if generated)
+     */
+    public String getAccessCode() {
+        return accessCode;
+    }
+    
+    /**
+     * Get list of pending viewers awaiting approval
+     */
+    public List<PendingViewer> getPendingViewers() {
+        return new ArrayList<>(pendingViewers);
+    }
+    
+    /**
+     * Approve a pending viewer
+     */
+    public void approveViewer(String viewerSessionId) {
+        if (serverConnection != null && serverConnection.isConnected()) {
+            String msg = String.format("{\"type\":\"approve-viewer\",\"viewerSessionId\":\"%s\"}", viewerSessionId);
+            serverConnection.sendText(msg);
+            pendingViewers.removeIf(v -> v.sessionId().equals(viewerSessionId));
+        }
+    }
+    
+    /**
+     * Deny a pending viewer
+     */
+    public void denyViewer(String viewerSessionId) {
+        if (serverConnection != null && serverConnection.isConnected()) {
+            String msg = String.format("{\"type\":\"deny-viewer\",\"viewerSessionId\":\"%s\"}", viewerSessionId);
+            serverConnection.sendText(msg);
+            pendingViewers.removeIf(v -> v.sessionId().equals(viewerSessionId));
+        }
+    }
+    
+    /**
+     * Ban a viewer (they cannot rejoin)
+     */
+    public void banViewer(String viewerSessionId) {
+        if (serverConnection != null && serverConnection.isConnected()) {
+            String msg = String.format("{\"type\":\"ban-viewer\",\"viewerSessionId\":\"%s\"}", viewerSessionId);
+            serverConnection.sendText(msg);
+        }
+    }
+    
+    /**
+     * Kick a viewer (they can rejoin)
+     */
+    public void kickViewer(String viewerSessionId) {
+        if (serverConnection != null && serverConnection.isConnected()) {
+            String msg = String.format("{\"type\":\"kick-viewer\",\"viewerSessionId\":\"%s\"}", viewerSessionId);
+            serverConnection.sendText(msg);
+        }
     }
 
     /**
@@ -214,12 +365,14 @@ public class HostController {
     }
 
     // Event Handlers
+    @SuppressWarnings("unused")
     private void onServerConnected() {
         System.out.println("✅ Host connected to server");
         onStatusUpdate.accept("✅ Connected to server");
         onConnectionStatusUpdate.accept(true);
     }
 
+    @SuppressWarnings("unused")
     private void onServerDisconnected() {
         System.out.println("❌ Host disconnected from server");
         isStreaming = false;
@@ -246,6 +399,21 @@ public class HostController {
                 case "viewer-count":
                     onViewerCount(json);
                     break;
+                case "viewer-request":
+                    onViewerRequestReceived(json);
+                    break;
+                case "viewer-approved":
+                    onViewerApproved(json);
+                    break;
+                case "viewer-denied":
+                    onViewerDenied(json);
+                    break;
+                case "viewer-banned":
+                    onViewerBanned(json);
+                    break;
+                case "viewer-kicked":
+                    onViewerKicked(json);
+                    break;
                 case "presenter-left":
                     onPresenterLeft(json);
                     break;
@@ -265,8 +433,68 @@ public class HostController {
     }
 
     private void onRoomCreated(JsonNode json) {
-        onStatusUpdate.accept("✅ Room created: " + roomId);
+        // Extract access code if provided
+        if (json.has("accessCode")) {
+            this.accessCode = json.get("accessCode").asText();
+            System.out.println("🔑 Room access code: " + accessCode);
+        }
+        
+        String statusMsg = "✅ Room created: " + roomId;
+        if (roomPassword != null && !roomPassword.isEmpty()) {
+            statusMsg += " 🔒 (password protected)";
+        }
+        if (accessCode != null) {
+            statusMsg += " | Code: " + accessCode;
+        }
+        
+        onStatusUpdate.accept(statusMsg);
         startScreenCapture();
+    }
+    
+    private void onViewerRequestReceived(JsonNode json) {
+        String viewerSessionId = json.get("viewerSessionId").asText();
+        String viewerUsername = json.has("viewerUsername") ? json.get("viewerUsername").asText() : "anonymous";
+        int pendingCount = json.has("pendingCount") ? json.get("pendingCount").asInt() : 0;
+        
+        PendingViewer pending = new PendingViewer(viewerSessionId, viewerUsername, System.currentTimeMillis());
+        pendingViewers.add(pending);
+        
+        System.out.println("👤 Viewer request from: " + viewerUsername + " (" + pendingCount + " pending)");
+        onStatusUpdate.accept("👤 Viewer request: " + viewerUsername);
+        
+        if (onViewerRequest != null) {
+            onViewerRequest.accept(pending);
+        }
+    }
+    
+    private void onViewerApproved(JsonNode json) {
+        String viewerSessionId = json.get("viewerSessionId").asText();
+        pendingViewers.removeIf(v -> v.sessionId().equals(viewerSessionId));
+        System.out.println("✅ Viewer approved: " + viewerSessionId);
+    }
+    
+    private void onViewerDenied(JsonNode json) {
+        String viewerSessionId = json.get("viewerSessionId").asText();
+        pendingViewers.removeIf(v -> v.sessionId().equals(viewerSessionId));
+        System.out.println("❌ Viewer denied: " + viewerSessionId);
+    }
+    
+    private void onViewerBanned(JsonNode json) {
+        String viewerSessionId = json.get("viewerSessionId").asText();
+        int newViewerCount = json.has("viewerCount") ? json.get("viewerCount").asInt() : viewerCount;
+        viewerCount = newViewerCount;
+        onViewerCountUpdate.accept(viewerCount);
+        System.out.println("🚫 Viewer banned: " + viewerSessionId);
+        onStatusUpdate.accept("🚫 Viewer banned");
+    }
+    
+    private void onViewerKicked(JsonNode json) {
+        String viewerSessionId = json.get("viewerSessionId").asText();
+        int newViewerCount = json.has("viewerCount") ? json.get("viewerCount").asInt() : viewerCount;
+        viewerCount = newViewerCount;
+        onViewerCountUpdate.accept(viewerCount);
+        System.out.println("👢 Viewer kicked: " + viewerSessionId);
+        onStatusUpdate.accept("👢 Viewer kicked");
     }
 
     private void onViewerJoined(JsonNode json) {
@@ -337,5 +565,9 @@ public class HostController {
             }
         }, 1, 1, TimeUnit.SECONDS);
     }
+    
+    /**
+     * Record for pending viewer information
+     */
+    public record PendingViewer(String sessionId, String username, long requestedAt) {}
 }
-

@@ -5,25 +5,17 @@ import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.Rectangle;
 import javafx.application.Platform;
 import javafx.animation.FadeTransition;
 import javafx.animation.TranslateTransition;
 import javafx.animation.ParallelTransition;
 import javafx.util.Duration;
 import javafx.geometry.Pos;
-import javafx.stage.Stage;
 import javafx.scene.Scene;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import service.ServerConnectionService;
 import service.ScreenCaptureService;
 import service.PerformanceMonitorService;
-import controller.HostController;
-import controller.ViewerController;
 
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -36,8 +28,11 @@ import java.util.concurrent.Executors;
 @Component
 public class MainController {
     // Services - will be manually set from App.java
+    @SuppressWarnings("unused")
     private ServerConnectionService serverConnectionService;
+    @SuppressWarnings("unused")
     private ScreenCaptureService screenCaptureService;
+    @SuppressWarnings("unused")
     private PerformanceMonitorService performanceMonitorService;
 
     // Role Selection
@@ -82,6 +77,7 @@ public class MainController {
     // Controllers
     private HostController hostController;
     private ViewerController viewerController;
+    @SuppressWarnings("unused")
     private final ExecutorService executorService = Executors.newFixedThreadPool(5);
     
     // Current role state - client can only be HOST or VIEWER, not both

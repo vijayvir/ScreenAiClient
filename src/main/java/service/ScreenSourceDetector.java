@@ -92,7 +92,6 @@ public class ScreenSourceDetector {
 
             if (screenIndex >= 0 && screenIndex < devices.length) {
                 GraphicsDevice device = devices[screenIndex];
-                Rectangle bounds = device.getDefaultConfiguration().getBounds();
 
                 return new ScreenSource.Builder()
                     .id("screen-" + screenIndex)
