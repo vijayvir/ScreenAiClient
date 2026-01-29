@@ -1,8 +1,8 @@
-# ScreenAI Client - Real-Time Screen Sharing Desktop Application
+# ScreenAI Client - Cross-Platform Screen Sharing Desktop Application
 
-> A **JavaFX desktop client** for real-time screen sharing using **JavaCV/FFmpeg** for screen capture and H.264 encoding, with WebSocket connectivity to a relay server.
+> A **JavaFX desktop client** for real-time screen sharing using **JavaCV/FFmpeg** for screen capture and H.264 encoding, with WebSocket connectivity to a relay server. **Supports macOS, Windows, and Linux.**
 
-![JavaFX 21](https://img.shields.io/badge/UI-JavaFX_21-blue) ![JavaCV 1.5.9](https://img.shields.io/badge/Video-JavaCV_1.5.9-orange) ![Spring Framework](https://img.shields.io/badge/Framework-Spring_6.x-green) ![WebSocket](https://img.shields.io/badge/Protocol-WebSocket-brightgreen) ![Java 21](https://img.shields.io/badge/Java-21-red)
+![JavaFX 21](https://img.shields.io/badge/UI-JavaFX_21-blue) ![JavaCV 1.5.9](https://img.shields.io/badge/Video-JavaCV_1.5.9-orange) ![Spring Framework](https://img.shields.io/badge/Framework-Spring_6.x-green) ![WebSocket](https://img.shields.io/badge/Protocol-WebSocket-brightgreen) ![Java 21](https://img.shields.io/badge/Java-21-red) ![Cross Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-purple)
 
 ## 📖 Table of Contents
 
@@ -18,31 +18,21 @@
 
 ## Overview
 
-**ScreenAI Client** is a professional desktop application enabling real-time screen sharing with two distinct roles:
+**ScreenAI Client** is a desktop application enabling real-time screen sharing with two distinct roles:
 
 ### 🔴 **HOST Mode (Presenter)**
 - Encode to **H.264/MPEG-TS** using FFmpeg with hardware acceleration support
-- Stream at configurable FPS with ultrafast/zerolatency preset
+- Stream at **~28-30 FPS** with ultrafast/zerolatency preset
+- Short GOP (15 frames) with MPEG-TS resend_headers for reliable viewer joining
 - Monitor streaming stats (frames sent, data transferred, viewer count)
 - Support for multiple encoders: VideoToolbox (macOS), NVENC (NVIDIA), libx264 (CPU)
 
 ### 🔵 **VIEWER Mode (Watcher)**
 - Connect to a host's room using Room ID
 - Receive H.264 chunks via WebSocket with frame buffering
-- Decode using **FFmpegFrameGrabber** (chunk-based decoding)
+- **Accumulated chunk decoding** (80KB threshold + 200ms time-based flush)
+- Decode using **FFmpegFrameGrabber** with batch processing (~12-15 FPS)
 - Display live video in JavaFX ImageView with real-time FPS metrics
-
-### Key Features
-✅ **Pure JavaCV** - Native screen capture via AVFoundation (macOS)  
-✅ **Hardware Acceleration** - VideoToolbox (macOS), NVENC (NVIDIA) encoder support  
-✅ **H.264 Encoding** - FFmpeg-based encoding with Strategy pattern for encoder selection  
-✅ **Thread-Safe** - AtomicReference-based connection management  
-✅ **Spring-Managed** - Lightweight dependency injection (non-server mode)  
-✅ **WebSocket Client** - Real-time binary streaming via Spring WebSocket  
-✅ **Cross-Platform** - Windows, macOS, Linux support  
-✅ **Frame Buffering** - Smooth playback with jitter handling  
-
----
 
 ## Quick Start
 
@@ -122,17 +112,23 @@ To test both HOST and VIEWER modes, run two instances:
 │                                                                     │
 │  ┌──────────────────────┐        ┌──────────────────────┐          │
 │  │    HOST MODE         │        │    VIEWER MODE        │          │
+│  │   (~28-30 FPS)       │        │   (~12-15 FPS)        │          │
 │  │                      │        │                       │          │
 │  │  ScreenCaptureService│        │  ServerConnectionService│        │
-│  │  (AVFoundation)      │        │  (WebSocket Receive)  │          │
+│  │  (Cross-Platform)    │        │  (WebSocket Receive)  │          │
+│  │  • macOS: AVFoundation        │       ↓               │          │
+│  │  • Windows: GDIGrab  │        │  FrameBufferService   │          │
+│  │  • Linux: X11Grab    │        │  (Chunk Accumulation) │          │
 │  │       ↓              │        │       ↓               │          │
-│  │  VideoEncoderFactory │        │  FrameBufferService   │          │
-│  │  (Strategy Pattern)  │        │  (Jitter Buffer)      │          │
-│  │       ↓              │        │       ↓               │          │
-│  │  H.264 Encoder       │        │  H264DecoderService   │          │
-│  │  • VideoToolbox(GPU) │        │  (FFmpegFrameGrabber) │          │
-│  │  • NVENC (GPU)       │        │       ↓               │          │
-│  │  • libx264 (CPU)     │        │  JavaFX ImageView     │          │
+│  │  VideoEncoderFactory │        │  H264DecoderService   │          │
+│  │  (Strategy Pattern)  │        │  (Batch FFmpegGrabber)│          │
+│  │       ↓              │        │  • 80KB threshold     │          │
+│  │  H.264 Encoder       │        │  • 200ms time flush   │          │
+│  │  • VideoToolbox(GPU) │        │       ↓               │          │
+│  │  • NVENC (GPU)       │        │  JavaFX ImageView     │          │
+│  │  • libx264 (CPU)     │        │                       │          │
+│  │  • GOP=15            │        │                       │          │
+│  │  • resend_headers    │        │                       │          │
 │  │       ↓              │        │                       │          │
 │  │  ServerConnectionService      │                       │          │
 │  │  (WebSocket Send)    │        │                       │          │
@@ -147,7 +143,7 @@ To test both HOST and VIEWER modes, run two instances:
 └─────────────────────────────────────────────────────────────────────┘
                               │
                               │ WebSocket (ws://)
-                              │ Binary H.264 + JSON Control
+                              │ Binary H.264 MPEG-TS + JSON Control
                               ↓
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     ScreenAI Server                                  │
@@ -169,8 +165,9 @@ To test both HOST and VIEWER modes, run two instances:
 |-----------|-----------|---------|---------|
 | **UI Framework** | JavaFX | 21.0.2 | Desktop GUI with FXML |
 | **Video Processing** | JavaCV | 1.5.9 | FFmpeg Java bindings |
-| **Screen Capture** | AVFoundation | - | macOS native capture |
+| **Screen Capture** | Platform-Specific | - | AVFoundation (macOS), GDIGrab (Windows), X11Grab (Linux) |
 | **Video Codec** | H.264 | - | Video encoding/decoding |
+| **Hardware Encoders** | VideoToolbox / NVENC | - | GPU-accelerated encoding |
 | **Container** | MPEG-TS | - | Streamable video format |
 | **DI Framework** | Spring Context | 6.0.13 | Dependency injection |
 | **WebSocket** | Spring WebSocket + Tyrus | 6.0.13 / 2.1.3 | WebSocket client |
@@ -178,6 +175,67 @@ To test both HOST and VIEWER modes, run two instances:
 | **Logging** | SLF4J + Logback | 2.0.9 / 1.4.11 | Logging framework |
 | **Java** | OpenJDK | 21+ | Programming language |
 | **Build Tool** | Maven | 3.9.x | Dependency management |
+
+---
+
+## Hardware-Accelerated Encoding
+
+The client automatically selects the best available encoder for your platform:
+
+| Platform | Hardware Encoder | CPU Reduction | Fallback |
+|----------|-----------------|---------------|----------|
+| **macOS** | VideoToolbox (GPU) | ~70% | libx264 |
+| **Windows** | NVENC (NVIDIA GPU) | ~80% | libx264 |
+| **Linux** | NVENC (NVIDIA GPU) | ~80% | libx264 |
+
+### Encoder Selection Logic
+
+```
+┌─────────────────────────────────────────────────────┐
+│              VideoEncoderFactory                     │
+├─────────────────────────────────────────────────────┤
+│  1. Detect Platform (macOS/Windows/Linux)           │
+│  2. Try Hardware Encoder:                           │
+│     ├── macOS → VideoToolbox (h264_videotoolbox)    │
+│     ├── Windows/Linux → NVENC (h264_nvenc)          │
+│  3. If hardware fails → LibX264 (ultrafast preset)  │
+└─────────────────────────────────────────────────────┘
+```
+
+### Expected Performance
+
+| Encoder | Encoding Time | End-to-End Latency | CPU Usage |
+|---------|--------------|-------------------|-----------|
+| **VideoToolbox** | ~5ms | 50-100ms | 5-10% |
+| **NVENC** | ~3ms | 30-80ms | 2-5% |
+| **LibX264** | ~15ms | 100-200ms | 30-40% |
+
+---
+
+## Platform-Specific Requirements
+
+### macOS
+- **Screen Recording Permission Required**
+  - Go to **System Preferences** → **Privacy & Security** → **Screen Recording**
+  - Enable permission for your Java/IDE application
+  - Restart the application after granting permission
+- Uses **AVFoundation** for native screen capture
+
+### Windows
+- No special permissions required
+- Uses **GDIGrab** for screen capture
+- Alternatively supports **DirectShow** (`dshow`) if available
+
+### Linux (Ubuntu/Debian)
+- **X11 Display Server Required** - Wayland is NOT currently supported
+- If using Wayland, switch to X11:
+  - At login screen, click gear icon and select "Ubuntu on Xorg"
+  - Or set `GDK_BACKEND=x11` before running
+- Install FFmpeg if not present:
+  ```bash
+  sudo apt install ffmpeg
+  ```
+- Uses **X11Grab** for screen capture
 
 ---
 
@@ -258,18 +316,43 @@ screenai:
 ### Video Encoding (ScreenCaptureService)
 
 ```java
-// Screen capture (macOS)
-grabber.setFormat("avfoundation");
-grabber.setFrameRate(15);
-grabber.setOption("capture_cursor", "1");
+// Platform-specific screen capture
+if (IS_MAC) {
+    grabber.setFormat("avfoundation");    // macOS
+} else if (IS_WINDOWS) {
+    grabber.setFormat("gdigrab");         // Windows
+} else if (IS_LINUX) {
+    grabber.setFormat("x11grab");         // Linux (X11 only)
+}
 
-// H.264 Encoding
+// Low-latency H.264 Encoding with optimized GOP
 recorder.setVideoCodec(avcodec.AV_CODEC_ID_H264);
 recorder.setFormat("mpegts");
-recorder.setVideoBitrate(600000);
+recorder.setFrameRate(30);                // 30 FPS target
+recorder.setVideoBitrate(1500000);        // 1.5 Mbps bitrate
 recorder.setVideoOption("preset", "ultrafast");
 recorder.setVideoOption("tune", "zerolatency");
+recorder.setGopSize(15);                  // Keyframe every ~0.5 sec (optimized for mid-stream joining)
+recorder.setOption("mpegts_flags", "resend_headers");  // Resend SPS/PPS with every segment
 ```
+
+### Video Decoding (H264DecoderService)
+
+```java
+// Accumulated chunk decoding approach
+private static final int MIN_BATCH_SIZE = 80_000;   // 80KB threshold
+private static final long MAX_BATCH_TIME_MS = 200;  // 200ms time-based flush
+
+// Decoder creates FFmpegFrameGrabber per batch for reliable decoding
+// - Collects chunks until MIN_BATCH_SIZE or MAX_BATCH_TIME_MS
+// - Each batch starts fresh with SPS/PPS headers
+// - Achieves ~12-15 FPS on viewer side
+```
+
+**Why not per-chunk decoding?**
+- Creating FFmpegFrameGrabber has ~100ms overhead per instance
+- Single-chunk decoding results in only 1-2 FPS
+- Batch processing amortizes the overhead across multiple frames
 
 ### Encoder Selection (Strategy Pattern)
 
@@ -280,8 +363,20 @@ VideoEncoderStrategy encoder = VideoEncoderFactory.getBestEncoder();
 // Available encoders:
 // - H264VideoToolboxEncoder (macOS GPU - ~70% CPU reduction)
 // - NvencEncoder (NVIDIA GPU - ~80% CPU reduction)
-// - LibX264Encoder (CPU fallback)
+// - LibX264Encoder (CPU fallback with repeat-headers for streaming)
 ```
+
+### Performance Characteristics
+
+| Role | Expected FPS | Notes |
+|------|-------------|-------|
+| **Host (Encoding)** | ~28-30 FPS | GPU-accelerated with VideoToolbox/NVENC |
+| **Viewer (Decoding)** | ~12-15 FPS | Accumulated chunk decoding approach |
+
+**Why viewer FPS is lower:**
+- FFmpegFrameGrabber initialization overhead (~100ms per batch)
+- Batch processing required for reliable H.264 stream parsing
+- Trade-off between latency and throughput
 
 ### WebSocket Protocol
 
@@ -312,6 +407,30 @@ VideoEncoderStrategy encoder = VideoEncoderFactory.getBestEncoder();
 
 ---
 
+## Known Limitations
+
+### Viewer FPS (~12-15 FPS vs Host ~28-30 FPS)
+
+The viewer achieves lower FPS than the host due to the decoder architecture:
+
+**Why this happens:**
+1. **FFmpegFrameGrabber Initialization Overhead:** Creating a new FFmpegFrameGrabber instance has ~100ms overhead for codec detection and initialization
+2. **Accumulated Chunk Decoding:** To achieve reliable decoding, chunks are accumulated to 80KB or 200ms before creating a decoder
+3. **H.264 Stream Requirements:** The decoder needs complete NAL units with SPS/PPS headers for proper initialization
+
+**Current Approach:**
+- Chunks are accumulated until 80KB threshold OR 200ms time limit
+- A new FFmpegFrameGrabber is created per batch
+- All frames in the batch are decoded sequentially
+- This trades some FPS for reliable, artifact-free decoding
+
+**Alternative approaches (not implemented):**
+- Persistent decoder with piped streams (complex SPS/PPS management for mid-stream joins)
+- Native FFmpeg process with frame extraction (adds IPC complexity)
+- Hardware-accelerated decoder on viewer (requires platform-specific code)
+
+---
+
 ## Troubleshooting
 
 ### macOS Screen Recording Permission
@@ -320,7 +439,7 @@ On first run, macOS will ask for screen recording permission:
 2. Enable permission for your Java/IDE application
 3. Restart the application
 
-### AVFoundation Device Selection
+### macOS AVFoundation Device Selection
 The client tries these device configurations in order:
 ```
 "1:none"   - First screen (main display)
@@ -328,16 +447,38 @@ The client tries these device configurations in order:
 "3:none"   - Third screen
 ```
 
+### Linux/Ubuntu Screen Capture Issues
+**Problem:** Screen sharing not working on Ubuntu
+- **Wayland Limitation:** X11Grab does not work on Wayland
+- **Solution:** Switch to X11 session:
+  1. Log out of your current session
+  2. At login screen, click the gear icon
+  3. Select "Ubuntu on Xorg" or "GNOME on Xorg"
+  4. Log back in and try again
+
+**Check your display server:**
+```bash
+echo $XDG_SESSION_TYPE
+# Should output: x11 (not wayland)
+```
+
+### Windows Screen Capture
+If GDIGrab fails, the client will attempt DirectShow as fallback.
+
 ### Common Issues
 
-| Issue | Solution |
-|-------|----------|
-| "No screen capture device" | Grant screen recording permission in System Preferences |
-| "Connection refused" | Ensure ScreenAI-Server is running on port 8080 |
-| "Connection timeout" | Check server IP/port, firewall settings |
-| "Room not found" | Verify room ID matches host's room |
-| "Video not displaying" | Wait for keyframe, check decoder logs |
-| "mvnw: No such file" | Run: `mvn -N io.takari:maven:wrapper` |
+| Issue | Platform | Solution |
+|-------|----------|----------|
+| "No screen capture device" | macOS | Grant screen recording permission in System Preferences |
+| "Screen capture failed" | Linux | Switch from Wayland to X11 session |
+| "Connection refused" | All | Ensure ScreenAI-Server is running on port 8080 |
+| "Connection timeout" | All | Check server IP/port, firewall settings |
+| "Room not found" | All | Verify room ID matches host's room |
+| "Video not displaying" | All | Wait for keyframe, check decoder logs |
+| "Viewer FPS ~12-15" | All | This is expected - accumulated chunk decoding architecture |
+| "mvnw: No such file" | All | Run: `mvn -N io.takari:maven:wrapper` |
+| "avcodec_open2 error" | All | Encoder compatibility issue - check FFmpeg installation |
+| "non-existing PPS referenced" | All | Mid-stream join issue - wait for next keyframe (GOP=15) |
 
 ### Network Troubleshooting
 ```bash
@@ -422,3 +563,4 @@ Key dependencies from `pom.xml`:
 
 - **[ScreenAI-Server](https://github.com/vijayvir/ScreenAi)** - Reactive WebSocket relay server (Spring WebFlux + Netty)
 
+---

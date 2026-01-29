@@ -5,18 +5,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
 /**
  * Frame Buffer Service for video streaming
  * Manages a buffer of video frames to handle network jitter and ensure smooth playback.
  * Also handles init segment caching for H.264 fMP4 streams.
  */
-@Service
 public class FrameBufferService {
-    private static final Logger logger = LoggerFactory.getLogger(FrameBufferService.class);
     
     // Buffer size: 3 seconds at 30 FPS = 90 frames
     private static final int MAX_BUFFER_SIZE = 90;
@@ -38,13 +32,13 @@ public class FrameBufferService {
      */
     public void setInitSegment(byte[] data) {
         if (data == null || data.length == 0) {
-            logger.warn("⚠️ Attempted to set empty init segment");
+            System.out.println("⚠️ Attempted to set empty init segment");
             return;
         }
         
         this.initSegment = data.clone();  // Clone to prevent external modification
         this.initSegmentReceived = true;
-        logger.info("🎬 Init segment cached: {} bytes", data.length);
+        System.out.println("🎬 Init segment cached: " + data.length + " bytes");
     }
 
     /**
@@ -85,8 +79,7 @@ public class FrameBufferService {
             // Log warning periodically
             long dropped_count = totalFramesDropped.get();
             if (dropped_count % 30 == 0) {
-                logger.warn("⚠️ Frame buffer full - dropped {} frames total (buffer size: {})", 
-                           dropped_count, frameQueue.size());
+                System.out.println("⚠️ Frame buffer full - dropped " + dropped_count + " frames total (buffer size: " + frameQueue.size() + ")");
             }
             
             return frameQueue.offer(frameData);
@@ -164,7 +157,7 @@ public class FrameBufferService {
         totalFramesReceived.set(0);
         totalFramesDropped.set(0);
         totalBytesReceived.set(0);
-        logger.info("🧹 Frame buffer cleared");
+        System.out.println("🧹 Frame buffer cleared");
     }
 
     /**
@@ -186,7 +179,7 @@ public class FrameBufferService {
                           data[6] == 'y' && data[7] == 'p';
         
         if (hasFtyp) {
-            logger.debug("📦 Detected ftyp box in data ({} bytes)", data.length);
+            // Debug: detected ftyp box
             return true;
         }
         
@@ -195,7 +188,7 @@ public class FrameBufferService {
                           data[6] == 'o' && data[7] == 'v';
         
         if (hasMoov) {
-            logger.debug("📦 Detected moov box in data ({} bytes)", data.length);
+            // Debug: detected moov box
             return true;
         }
         
@@ -208,8 +201,7 @@ public class FrameBufferService {
             if (nalTypeIndex >= 0) {
                 int nalType = data[nalTypeIndex] & 0x1F;  // NAL unit type is in lower 5 bits
                 if (nalType == 7 || nalType == 8) {  // SPS or PPS
-                    logger.debug("📦 Detected H.264 {} NAL unit ({} bytes)", 
-                               nalType == 7 ? "SPS" : "PPS", data.length);
+                    // Debug: detected SPS or PPS NAL unit
                     return true;
                 }
             }

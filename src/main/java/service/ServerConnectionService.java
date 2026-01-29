@@ -20,16 +20,21 @@ import java.util.function.Consumer;
  * Connects to ScreenAI-Server relay for screen sharing
  *
  * Provides thread-safe connection management with proper error handling.
+ * Supports JWT authentication for secure connections.
  * Note: Not a Spring bean - instantiated directly by controllers
  */
 public class ServerConnectionService {
     private static final Logger logger = LoggerFactory.getLogger(ServerConnectionService.class);
     
-    private final String serverUrl;
+    private final String baseServerUrl;
     private volatile Consumer<String> onTextMessage;
     private volatile Consumer<byte[]> onBinaryMessage;
     private volatile Runnable onConnectionOpen;
     private volatile Runnable onConnectionClosed;
+    private volatile Consumer<String> onError;
+    
+    // Authentication
+    private volatile String authToken;
     
     // Thread-safe session management
     private final AtomicReference<WebSocketSession> sessionRef = new AtomicReference<>(null);
@@ -48,7 +53,7 @@ public class ServerConnectionService {
      * Used for direct instantiation by controllers
      */
     public ServerConnectionService(String serverUrl) {
-        this.serverUrl = serverUrl;
+        this.baseServerUrl = serverUrl;
         
         // Configure WebSocket container with larger buffer sizes
         try {
@@ -66,6 +71,22 @@ public class ServerConnectionService {
         logger.info("ServerConnectionService initialized for: {}", serverUrl);
     }
 
+    /**
+     * Set the authentication token for secure connections.
+     */
+    public void setAuthToken(String token) {
+        this.authToken = token;
+        logger.debug("Auth token set");
+    }
+
+    /**
+     * Clear the authentication token.
+     */
+    public void clearAuthToken() {
+        this.authToken = null;
+        logger.debug("Auth token cleared");
+    }
+
     public void setTextMessageHandler(Consumer<String> handler) {
         this.onTextMessage = handler;
     }
@@ -80,6 +101,22 @@ public class ServerConnectionService {
 
     public void setConnectionClosedHandler(Runnable handler) {
         this.onConnectionClosed = handler;
+    }
+    
+    public void setErrorHandler(Consumer<String> handler) {
+        this.onError = handler;
+    }
+
+    /**
+     * Get the WebSocket URL with optional token authentication.
+     */
+    private String getAuthenticatedUrl() {
+        if (authToken != null && !authToken.isEmpty()) {
+            // Append token as query parameter for WebSocket authentication
+            String separator = baseServerUrl.contains("?") ? "&" : "?";
+            return baseServerUrl + separator + "token=" + authToken;
+        }
+        return baseServerUrl;
     }
 
     /**
@@ -100,7 +137,9 @@ public class ServerConnectionService {
         }
         
         try {
-            logger.info("Attempting to connect to: {}", serverUrl);
+            String serverUrl = getAuthenticatedUrl();
+            logger.info("Attempting to connect to: {}", 
+                    authToken != null ? baseServerUrl + "?token=***" : baseServerUrl);
 
             // Validate URL format
             if (!serverUrl.startsWith("ws://") && !serverUrl.startsWith("wss://")) {

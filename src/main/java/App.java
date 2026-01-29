@@ -2,60 +2,63 @@ import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
-import application.ScreenAIClientApplication;
 import controller.MainController;
+import controller.DualModeMainController;
 import org.springframework.context.ConfigurableApplicationContext;
-import service.ServerConnectionService;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * ScreenAI Client - JavaFX + Spring Application
- * Main entry point combining JavaFX UI with Spring dependency injection
+ * Supports both classic mode (separate host/viewer) and dual mode (bidirectional)
  */
 public class App extends Application {
     private ConfigurableApplicationContext springContext;
+    private static boolean useDualMode = true; // Default to dual mode
 
     @Override
     public void start(Stage stage) throws IOException {
+        // Check command line arguments for mode selection
+        List<String> args = getParameters().getRaw();
+        if (args.contains("--classic")) {
+            useDualMode = false;
+            System.out.println("🔧 Running in CLASSIC mode (separate host/viewer)");
+        } else {
+            useDualMode = true;
+            System.out.println("🔧 Running in DUAL mode (bidirectional screen sharing)");
+        }
+
         // Initialize Spring context for dependency injection
         System.out.println("🚀 Initializing Spring context...");
         ScreenAIClientApplication.startSpringContext();
         springContext = ScreenAIClientApplication.getSpringContext();
         System.out.println("✅ Spring context initialized");
         
-        // Debug: Check if MainController bean exists
-        System.out.println("🔍 Checking for MainController bean...");
-        try {
-            MainController controller = springContext.getBean(MainController.class);
-            System.out.println("✅ MainController bean found: " + controller);
-        } catch (Exception e) {
-            System.err.println("❌ MainController bean NOT found!");
-            System.err.println("❌ Error: " + e.getMessage());
-            System.out.println("📝 Available beans:");
-            for (String beanName : springContext.getBeanDefinitionNames()) {
-                System.out.println("   - " + beanName);
-            }
+        // Load appropriate FXML based on mode
+        FXMLLoader fxmlLoader;
+        if (useDualMode) {
+            System.out.println("� Loading Dual Mode UI...");
+            fxmlLoader = new FXMLLoader(App.class.getResource("/ui/dual-mode.fxml"));
+            // Dual mode controller is NOT a Spring bean, create it manually
+            fxmlLoader.setControllerFactory(controllerClass -> {
+                if (controllerClass == DualModeMainController.class) {
+                    return new DualModeMainController();
+                }
+                return springContext.getBean(controllerClass);
+            });
+        } else {
+            System.out.println("📺 Loading Classic Mode UI...");
+            fxmlLoader = new FXMLLoader(App.class.getResource("/ui/main.fxml"));
+            fxmlLoader.setControllerFactory(springContext::getBean);
         }
 
-        // Load JavaFX FXML
-        FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource("/ui/main.fxml"));
-
-        // Set Spring context as controller factory for dependency injection in FXML
-        fxmlLoader.setControllerFactory(springContext::getBean);
-
         Scene scene = new Scene(fxmlLoader.load(), 1200, 800);
-        stage.setTitle("ScreenAI - Screen Sharing Application");
+        stage.setTitle("ScreenAI - " + (useDualMode ? "Bidirectional Screen Sharing" : "Screen Sharing"));
         stage.setScene(scene);
 
         // Handle window close
         stage.setOnCloseRequest(e -> {
             System.out.println("🔌 Closing application...");
-
-            // Note: ServerConnectionService instances are created by controllers, not Spring beans
-            // Controllers will handle their own cleanup via disconnect() methods
-            // This is handled by the MainController or individual controllers
-
-            // Stop Spring context
             ScreenAIClientApplication.stopSpringContext();
             System.exit(0);
         });

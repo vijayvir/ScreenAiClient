@@ -6,6 +6,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,15 +21,14 @@ import service.H264DecoderService;
 import service.ServerConnectionService;
 
 /**
- * Viewer Controller
- * Manages viewer/watcher role - stream reception, decoding, and display
+ * Viewer Controller - Optimized for Low Latency
  * 
- * Video Pipeline:
- * 1. Receive binary H.264 fMP4 data via WebSocket
- * 2. Detect init segment (ftyp/moov) vs media segment (moof/mdat)
- * 3. Buffer media segments in FrameBufferService
- * 4. Decode frames using H264DecoderService
- * 5. Display decoded frames in ImageView
+ * Uses zero-buffer display approach:
+ * 1. Receive binary H.264 MPEG-TS data via WebSocket
+ * 2. Send directly to decoder (no buffering)
+ * 3. Display decoded frames immediately (atomic swap)
+ * 
+ * This minimizes latency by avoiding queue-based buffering.
  */
 public class ViewerController {
     private ServerConnectionService serverConnection;
@@ -41,6 +42,7 @@ public class ViewerController {
     private ScheduledExecutorService metricsExecutor;
 
     private volatile boolean isConnected = false;
+    @SuppressWarnings("unused")
     private volatile boolean isWatchingStream = false;
     private volatile boolean isPlaying = false;
     private Thread playbackThread;
@@ -48,6 +50,7 @@ public class ViewerController {
     private String roomId;
     private final AtomicInteger frameCount = new AtomicInteger(0);
     private final AtomicLong totalBytesReceived = new AtomicLong(0);
+    @SuppressWarnings("unused")
     private long lastStatsTime = System.currentTimeMillis();
 
     // UI components (optional - set via setter)
@@ -225,11 +228,7 @@ public class ViewerController {
 
     /**
      * Handle binary video data from server
-     * This is the main entry point for video data
-     * 
-     * For raw H.264 Annex B streams:
-     * - SPS/PPS NAL units (init) are fed to decoder first
-     * - IDR and non-IDR slices are decoded to produce frames
+     * Optimized: Send directly to decoder without buffering for low latency
      */
     private void handleBinaryMessage(byte[] data) {
         // Null and empty check
@@ -240,9 +239,9 @@ public class ViewerController {
 
         long frameNum = totalBytesReceived.incrementAndGet();
         
-        // Always log first few frames to confirm data is flowing, then periodically
-        if (frameNum <= 10 || frameNum % 30 == 0) {
-            System.out.println("📦 [VIEWER] Binary frame #" + frameNum + ": " + data.length + " bytes");
+        // Log first few frames to confirm data is flowing
+        if (frameNum <= 5 || frameNum % 100 == 0) {
+            System.out.println("📦 [VIEWER] Chunk #" + frameNum + ": " + data.length + " bytes");
         }
 
         // Initialize decoder if not already done
@@ -250,19 +249,16 @@ public class ViewerController {
             try {
                 System.out.println("🎬 [VIEWER] First data received, initializing decoder...");
                 
-                // Initialize decoder with frame callback to display decoded frames
+                // Initialize decoder with frame callback - displays frames directly (zero buffer)
                 decoderService.initialize(decodedFrame -> {
-                    // This callback is called for each decoded frame
                     if (decodedFrame != null) {
                         frameCount.incrementAndGet();
                         
-                        // Update UI on JavaFX thread
+                        // Update UI on JavaFX thread - use atomic swap for lowest latency
                         Platform.runLater(() -> {
-                            // Update ImageView if set
                             if (videoImageView != null) {
                                 videoImageView.setImage(decodedFrame);
                             }
-                            // Call image callback if set
                             if (onImageUpdate != null) {
                                 onImageUpdate.accept(decodedFrame);
                             }
@@ -270,41 +266,27 @@ public class ViewerController {
                     }
                 });
                 
-                System.out.println("✅ [VIEWER] Decoder initialized successfully!");
-                onVideoDisplayUpdate.accept("🎬 Decoder initialized - starting playback...");
+                System.out.println("✅ [VIEWER] Decoder initialized (zero-buffer mode)");
+                onVideoDisplayUpdate.accept("🎬 Decoder ready - streaming...");
                 
-                // Start playback thread for processing buffered data
-                if (!isPlaying) {
-                    startPlayback();
-                }
+                // Start metrics updater (no playback thread needed)
+                isPlaying = true;
+                startMetricsUpdater();
+                
             } catch (Exception e) {
                 System.err.println("❌ [VIEWER] Failed to initialize decoder: " + e.getMessage());
-                System.err.println("❌ [VIEWER] Make sure javacv-platform dependency is in pom.xml");
                 e.printStackTrace();
                 onVideoDisplayUpdate.accept("❌ Decoder failed: " + e.getMessage());
-                onStatusUpdate.accept("❌ Decoder initialization failed");
                 return;
             }
         }
 
-        // Check if this is an init segment (SPS/PPS for H.264)
-        boolean isInit = frameBufferService.isInitSegment(data);
-        if (isInit) {
-            System.out.println("🎬 [VIEWER] Init segment (SPS/PPS) detected: " + data.length + " bytes");
-            frameBufferService.setInitSegment(data);
-        }
-
-        // Add ALL data to buffer - decoder will handle SPS/PPS and slice NALs
-        boolean added = frameBufferService.addFrame(data);
-        if (!added) {
-            System.out.println("⚠️ [VIEWER] Failed to add frame to buffer (buffer full?)");
-        }
+        // Send data directly to decoder - no buffering for lowest latency
+        decoderService.decodeFrame(data);
         
-        // Update display with frame count periodically
-        long received = frameBufferService.getTotalFramesReceived();
-        if (received % 30 == 0) {
-            int bufferSize = frameBufferService.getBufferSize();
-            onVideoDisplayUpdate.accept("🎥 Receiving... (" + received + " packets, buffer: " + bufferSize + ")");
+        // Update status periodically
+        if (frameNum % 100 == 0) {
+            onVideoDisplayUpdate.accept("🎥 Streaming... (chunks: " + frameNum + ", decoded: " + decoderService.getTotalFramesDecoded() + ")");
         }
     }
 
@@ -490,21 +472,21 @@ public class ViewerController {
         
         metricsExecutor.scheduleAtFixedRate(() -> {
             if (isPlaying) {
-                // Calculate FPS
+                // Calculate display FPS (from decoder callback)
                 int frames = frameCount.getAndSet(0);
                 onFpsUpdate.accept(frames + " FPS");
 
                 // Calculate data rate
-                long bytes = totalBytesReceived.getAndSet(0);
+                long bytes = totalBytesReceived.get();
                 double mbps = (bytes * 8.0) / (1024 * 1024);
                 onDataUpdate.accept(String.format("%.2f Mbps", mbps));
                 
-                // Log stats periodically
+                // Log stats
                 if (decoderService.isInitialized()) {
                     System.out.println(String.format(
-                        "📊 [VIEWER] FPS: %d | Data: %.2f Mbps | Buffer: %d | Resolution: %dx%d | Decoded: %d",
-                        frames, mbps, 
-                        frameBufferService.getBufferSize(),
+                        "📊 [VIEWER] Display FPS: %d | Queue: %d | Resolution: %dx%d | Total Decoded: %d",
+                        frames, 
+                        decoderService.getQueueSize(),
                         decoderService.getWidth(), decoderService.getHeight(),
                         decoderService.getTotalFramesDecoded()
                     ));
@@ -523,6 +505,6 @@ public class ViewerController {
     }
 
     public int getBufferSize() {
-        return frameBufferService != null ? frameBufferService.getBufferSize() : 0;
+        return decoderService != null ? decoderService.getQueueSize() : 0;
     }
 }

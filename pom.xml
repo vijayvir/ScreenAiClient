@@ -89,6 +89,9 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.16.0</version>
         </dependency>
+        
+        <!-- Java HTTP Client (already in JDK 21, but ensure compatibility) -->
+        <!-- java.net.http.HttpClient is built-in, no extra dependency needed -->
 
         <!-- Logging -->
         <dependency>

@@ -1,5 +1,3 @@
-package application;
-
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.ComponentScan;
@@ -10,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
  * Manages Spring dependency injection without running as a server
  */
 @Configuration
-@ComponentScan(basePackages = {"application", "service", "controller", "config"})
+@ComponentScan(basePackages = {"service", "controller", "encoder", "model"})
 public class ScreenAIClientApplication {
     private static ConfigurableApplicationContext springContext;
 

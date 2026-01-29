@@ -2,34 +2,34 @@ package service;
 
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelFormat;
+import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
 import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.FFmpegLogCallback;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.Java2DFrameConverter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 /**
  * H.264 Decoder Service using JavaCV/FFmpeg
  * 
- * Uses chunk-based decoding - each incoming chunk is a complete GOP (starts with keyframe)
- * so we can decode each chunk independently using ByteArrayInputStream.
+ * Optimized accumulated chunk decoder:
+ * - Smaller batches for lower latency
+ * - Time-based flush to prevent stalls
+ * - Reuses converters for efficiency
  */
-@Service
 public class H264DecoderService {
-    private static final Logger logger = LoggerFactory.getLogger(H264DecoderService.class);
     
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -39,33 +39,44 @@ public class H264DecoderService {
     private Java2DFrameConverter converter;
     
     // Queue for incoming video chunks
-    private final BlockingQueue<byte[]> chunkQueue = new LinkedBlockingQueue<>(50);
+    private final BlockingQueue<byte[]> chunkQueue = new LinkedBlockingQueue<>(100);
+    
+    // Accumulation buffer - smaller batches for lower latency
+    private final ByteArrayOutputStream accumBuffer = new ByteArrayOutputStream();
+    private static final int DECODE_THRESHOLD = 80000;   // Decode at ~80KB (about 1 GOP)
+    private static final int MAX_BUFFER_SIZE = 500000;   // Force decode at 500KB
+    private static final long MAX_BUFFER_TIME_MS = 200;  // Max 200ms before forced decode
+    
+    // Reusable image for better performance
+    private WritableImage reusableImage;
+    private int lastImageWidth = 0;
+    private int lastImageHeight = 0;
     
     private int width = 0;
     private int height = 0;
-    private long totalFramesDecoded = 0;
-    private long totalChunksProcessed = 0;
+    private final AtomicLong totalFramesDecoded = new AtomicLong(0);
+    private final AtomicLong totalChunksProcessed = new AtomicLong(0);
+    private final AtomicLong totalBytesReceived = new AtomicLong(0);
     private long startTime = 0;
+    
+    // Performance tracking
+    private long lastStatsTime = 0;
+    private long framesAtLastStats = 0;
+    private long lastBufferTime = 0;
 
     public H264DecoderService() {
         FFmpegLogCallback.set();
         avutil.av_log_set_level(avutil.AV_LOG_ERROR);
-        logger.info("H264DecoderService created (chunk-based decoding)");
+        System.out.println("H264DecoderService created (optimized batch decoder)");
     }
 
-    /**
-     * Empty initialize for compatibility
-     */
     public void initialize() throws Exception {
-        logger.info("Decoder initialize() called (no-op)");
+        System.out.println("Decoder initialize() called (no-op)");
     }
 
-    /**
-     * Initialize with frame callback
-     */
     public void initialize(Consumer<Image> onFrameDecoded) throws IOException {
         if (initialized.get()) {
-            logger.warn("Decoder already initialized");
+            System.out.println("⚠️ Decoder already initialized");
             return;
         }
 
@@ -75,24 +86,24 @@ public class H264DecoderService {
         running.set(true);
         decoderThread = new Thread(this::decoderLoop, "H264DecoderThread");
         decoderThread.setDaemon(true);
+        decoderThread.setPriority(Thread.MAX_PRIORITY);
         decoderThread.start();
         
         initialized.set(true);
         startTime = System.currentTimeMillis();
-        logger.info("Decoder initialized with frame callback");
+        lastStatsTime = startTime;
+        lastBufferTime = startTime;
+        System.out.println("✅ Decoder initialized (optimized batch mode, threshold=" + DECODE_THRESHOLD/1000 + "KB)");
     }
 
-    /**
-     * Queue data for decoding - each chunk should be a complete segment
-     */
     public Image decodeFrame(byte[] data) {
         if (!initialized.get() || !running.get() || data == null || data.length == 0) {
             return null;
         }
         
-        // Queue chunk for decoding
+        totalBytesReceived.addAndGet(data.length);
+        
         if (!chunkQueue.offer(data)) {
-            // Queue full, drop oldest to keep up with live stream
             chunkQueue.poll();
             chunkQueue.offer(data);
         }
@@ -100,131 +111,164 @@ public class H264DecoderService {
         return null;
     }
 
-    /**
-     * Main decoder loop - processes chunks from queue
-     * Each chunk is decoded independently using ByteArrayInputStream
-     */
     private void decoderLoop() {
-        logger.info("🎬 Decoder loop started (chunk-based)");
+        System.out.println("🔄 Decoder loop started (optimized batch mode)");
         
         while (running.get()) {
             try {
-                // Wait for chunk
-                byte[] chunk = chunkQueue.poll(100, TimeUnit.MILLISECONDS);
+                byte[] chunk = chunkQueue.poll(20, TimeUnit.MILLISECONDS);
+                long now = System.currentTimeMillis();
                 
-                if (chunk == null || chunk.length == 0) {
-                    continue;
+                if (chunk != null && chunk.length > 0) {
+                    totalChunksProcessed.incrementAndGet();
+                    
+                    synchronized (accumBuffer) {
+                        if (accumBuffer.size() == 0) {
+                            lastBufferTime = now;  // Reset timer on first chunk
+                        }
+                        accumBuffer.write(chunk);
+                    }
                 }
                 
-                // Decode this chunk
-                decodeChunk(chunk);
+                // Check if we should decode
+                int bufferedSize;
+                long bufferAge;
+                synchronized (accumBuffer) {
+                    bufferedSize = accumBuffer.size();
+                    bufferAge = now - lastBufferTime;
+                }
+                
+                boolean shouldDecode = bufferedSize >= DECODE_THRESHOLD ||
+                                       bufferedSize >= MAX_BUFFER_SIZE ||
+                                       (bufferedSize > 20000 && bufferAge > MAX_BUFFER_TIME_MS);
+                
+                if (shouldDecode && bufferedSize > 0) {
+                    byte[] dataToProcess;
+                    synchronized (accumBuffer) {
+                        dataToProcess = accumBuffer.toByteArray();
+                        accumBuffer.reset();
+                        lastBufferTime = now;
+                    }
+                    
+                    decodeAccumulatedData(dataToProcess);
+                }
+                
+                // Print stats periodically
+                if (now - lastStatsTime > 5000) {
+                    printStats();
+                    lastStatsTime = now;
+                }
                 
             } catch (InterruptedException e) {
-                logger.info("Decoder interrupted");
+                System.out.println("Decoder interrupted");
                 break;
             } catch (Exception e) {
                 if (running.get()) {
-                    logger.debug("Decoder loop error: {}", e.getMessage());
+                    System.out.println("⚠️ Decoder loop error: " + e.getMessage());
                 }
             }
         }
         
-        logger.info("🎬 Decoder loop ended. Total frames: {}", totalFramesDecoded);
+        System.out.println("🛑 Decoder loop ended. Total frames: " + totalFramesDecoded.get());
     }
 
-    /**
-     * Decode a single MPEG-TS chunk using ByteArrayInputStream
-     * Each chunk from encoder contains complete GOPs, so can be decoded independently
-     */
-    private void decodeChunk(byte[] data) {
-        if (data == null || data.length < 188) { // Minimum MPEG-TS packet size
+    private void decodeAccumulatedData(byte[] data) {
+        if (data == null || data.length < 188) {
             return;
         }
         
-        totalChunksProcessed++;
         FFmpegFrameGrabber grabber = null;
         
         try {
-            // Create grabber from byte array input stream
             ByteArrayInputStream inputStream = new ByteArrayInputStream(data);
             grabber = new FFmpegFrameGrabber(inputStream);
             grabber.setFormat("mpegts");
+            
+            // Minimal analysis for faster startup
+            grabber.setOption("fflags", "nobuffer+discardcorrupt");
+            grabber.setOption("flags", "low_delay");
+            grabber.setOption("analyzeduration", "0");
+            grabber.setOption("probesize", "32768");
+            
             grabber.start();
             
-            // Get dimensions on first successful decode
             if (width == 0 || height == 0) {
                 width = grabber.getImageWidth();
                 height = grabber.getImageHeight();
                 if (width > 0 && height > 0) {
-                    logger.info("✅ Video dimensions detected: {}x{}", width, height);
+                    System.out.println("📺 Video: " + width + "x" + height);
                 }
             }
             
-            // Decode all frames in this chunk
-            int framesInChunk = 0;
+            // Decode all frames in accumulated data
             Frame frame;
-            while ((frame = grabber.grab()) != null && running.get()) {
+            while ((frame = grabber.grabImage()) != null && running.get()) {
                 if (frame.image != null) {
                     BufferedImage bi = converter.convert(frame);
                     if (bi != null) {
-                        Image fxImage = toFxImage(bi);
+                        Image fxImage = toFxImageFast(bi);
                         if (fxImage != null && frameConsumer != null) {
                             frameConsumer.accept(fxImage);
-                            totalFramesDecoded++;
-                            framesInChunk++;
+                            totalFramesDecoded.incrementAndGet();
                         }
                     }
                 }
             }
             
-            // Log progress periodically
-            if (totalChunksProcessed % 5 == 0 && framesInChunk > 0) {
-                long elapsed = System.currentTimeMillis() - startTime;
-                double fps = elapsed > 0 ? totalFramesDecoded * 1000.0 / elapsed : 0;
-                logger.info("📊 Chunks: {} | Frames: {} | FPS: {}", 
-                    totalChunksProcessed, totalFramesDecoded, String.format("%.1f", fps));
-            }
-            
         } catch (Exception e) {
-            // Chunk decode errors can happen, don't spam logs
-            if (totalChunksProcessed % 20 == 1) {
-                logger.debug("Chunk decode issue (chunk #{}): {}", totalChunksProcessed, e.getMessage());
-            }
+            // Decoding errors can happen on partial data, ignore
         } finally {
             if (grabber != null) {
                 try {
                     grabber.stop();
                     grabber.release();
                 } catch (Exception e) {
-                    // Ignore cleanup errors
+                    // Ignore
                 }
             }
         }
     }
 
-    /**
-     * Convert BufferedImage to JavaFX Image
-     */
-    private Image toFxImage(BufferedImage bi) {
+    private void printStats() {
+        long elapsed = System.currentTimeMillis() - startTime;
+        long frames = totalFramesDecoded.get();
+        long chunks = totalChunksProcessed.get();
+        long bytes = totalBytesReceived.get();
+        
+        if (elapsed > 0) {
+            double fps = frames * 1000.0 / elapsed;
+            double recentFps = (frames - framesAtLastStats) * 1000.0 / 5000.0;
+            System.out.println(String.format(
+                "📊 Decoder: Chunks=%d | Data=%.1fMB | Frames=%d | FPS=%.1f (recent=%.1f)",
+                chunks, bytes/1024.0/1024.0, frames, fps, recentFps));
+            framesAtLastStats = frames;
+        }
+    }
+
+    private Image toFxImageFast(BufferedImage bi) {
         try {
             int w = bi.getWidth();
             int h = bi.getHeight();
-            WritableImage img = new WritableImage(w, h);
+            
+            if (reusableImage == null || lastImageWidth != w || lastImageHeight != h) {
+                reusableImage = new WritableImage(w, h);
+                lastImageWidth = w;
+                lastImageHeight = h;
+            }
+            
+            PixelWriter pw = reusableImage.getPixelWriter();
             int[] pixels = new int[w * h];
             bi.getRGB(0, 0, w, h, pixels, 0, w);
-            img.getPixelWriter().setPixels(0, 0, w, h,
-                PixelFormat.getIntArgbInstance(), pixels, 0, w);
-            return img;
+            pw.setPixels(0, 0, w, h, PixelFormat.getIntArgbInstance(), pixels, 0, w);
+            
+            return reusableImage;
         } catch (Exception e) {
             return null;
         }
     }
 
-    /**
-     * Cleanup resources
-     */
     public void cleanup() {
-        logger.info("🧹 Cleaning up decoder...");
+        System.out.println("🧹 Cleaning up decoder...");
         running.set(false);
         initialized.set(false);
         
@@ -244,12 +288,23 @@ public class H264DecoderService {
         }
         
         chunkQueue.clear();
+        synchronized (accumBuffer) {
+            accumBuffer.reset();
+        }
+        reusableImage = null;
         
-        logger.info("✅ Decoder cleaned up. Total frames decoded: {}", totalFramesDecoded);
+        System.out.println("✅ Decoder cleaned up. Total frames: " + totalFramesDecoded.get());
     }
 
     public boolean isInitialized() { return initialized.get(); }
     public int getWidth() { return width; }
     public int getHeight() { return height; }
-    public long getTotalFramesDecoded() { return totalFramesDecoded; }
+    public long getTotalFramesDecoded() { return totalFramesDecoded.get(); }
+    public int getQueueSize() { return chunkQueue.size(); }
+    
+    public double getCurrentFPS() {
+        long elapsed = System.currentTimeMillis() - startTime;
+        long frames = totalFramesDecoded.get();
+        return (elapsed > 0) ? (frames * 1000.0 / elapsed) : 0.0;
+    }
 }

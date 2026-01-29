@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Software H.264 Encoder (CPU-based fallback)
+ * Uses OpenH264 which is bundled with JavaCV FFmpeg
+ * Optimized for low latency screen sharing
  */
 public class LibX264Encoder implements VideoEncoderStrategy {
     
@@ -14,28 +16,26 @@ public class LibX264Encoder implements VideoEncoderStrategy {
     @Override
     public boolean configure(FFmpegFrameRecorder recorder) {
         try {
-            recorder.setVideoCodecName("libx264");
+            // Use OpenH264 encoder which is bundled with JavaCV's FFmpeg
+            // libx264 requires GPL and isn't included by default
+            recorder.setVideoCodecName("libopenh264");
             
-            // Ultra-low latency software encoding
-            recorder.setVideoOption("preset", "ultrafast");
-            recorder.setVideoOption("tune", "zerolatency");
-            recorder.setVideoOption("bf", "0"); // No B-frames
-            recorder.setVideoOption("refs", "1"); // Single reference frame
-            recorder.setVideoOption("rc-lookahead", "0"); // No lookahead
-            recorder.setVideoOption("sliced-threads", "1"); // Use sliced threads
-            recorder.setVideoOption("sync-lookahead", "0"); // No sync lookahead
+            // OpenH264 specific options for low latency
+            // Note: OpenH264 uses different option names than libx264
+            recorder.setVideoOption("allow_skip_frames", "0");  // Don't skip frames
+            recorder.setVideoOption("rc_mode", "bitrate");      // Constant bitrate mode
             
-            logger.info("✅ Configured libx264 software encoder");
+            logger.info("✅ Configured OpenH264 software encoder");
             return true;
         } catch (Exception e) {
-            logger.warn("❌ libx264 configuration failed: {}", e.getMessage());
+            logger.warn("❌ OpenH264 configuration failed: {}", e.getMessage());
             return false;
         }
     }
     
     @Override
     public String getCodecName() {
-        return "libx264";
+        return "libopenh264";
     }
     
     @Override
@@ -45,7 +45,7 @@ public class LibX264Encoder implements VideoEncoderStrategy {
     
     @Override
     public String getEncoderType() {
-        return "CPU (libx264)";
+        return "CPU (OpenH264)";
     }
     
     @Override
