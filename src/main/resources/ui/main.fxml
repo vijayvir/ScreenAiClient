@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.*?>
+<ScrollPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="controller.MainController" fitToWidth="true" style="-fx-font-size: 12;">
+    <VBox spacing="15" style="-fx-padding: 20; -fx-background-color: #f5f5f5;">
+        <!-- Title -->
+        <HBox style="-fx-padding: 15; -fx-background-color: #1565c0; -fx-border-width: 0; -fx-spacing: 10;">
+            <Label text="🎬 ScreenAI - Screen Sharing" style="-fx-font-size: 22; -fx-font-weight: bold; -fx-text-fill: white;"/>
+        </HBox>
+        <!-- Role Selection -->
+        <VBox style="-fx-padding: 15; -fx-background-color: white; -fx-border-color: #ccc; -fx-border-width: 1; -fx-spacing: 10;">
+            <Label text="Select Your Role:" style="-fx-font-size: 14; -fx-font-weight: bold;"/>
+            <HBox spacing="20">
+                <fx:define>
+                    <ToggleGroup fx:id="roleToggleGroup"/>
+                </fx:define>
+                <RadioButton fx:id="hostRadio" text="🔴 HOST (Share Screen)" selected="true" toggleGroup="$roleToggleGroup"/>
+                <RadioButton fx:id="viewerRadio" text="🔵 VIEWER (Watch Stream)" toggleGroup="$roleToggleGroup"/>
+            </HBox>
+        </VBox>
+        <!-- HOST Section -->
+        <VBox fx:id="hostSection" spacing="12" style="-fx-padding: 15; -fx-background-color: white; -fx-border-color: #d32f2f; -fx-border-left-width: 4; -fx-border-top-width: 0; -fx-border-right-width: 0; -fx-border-bottom-width: 0;">
+            <Label text="🔴 HOST MODE" style="-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #d32f2f;"/>
+            <Separator/>
+            <Label text="Server Settings" style="-fx-font-size: 11; -fx-font-weight: bold;"/>
+            <HBox spacing="10">
+                <Label text="Host:" style="-fx-min-width: 50;"/>
+                <TextField fx:id="hostServerInput" text="localhost" prefWidth="100"/>
+                <Label text="Port:"/>
+                <TextField fx:id="hostPortInput" text="8080" prefWidth="70"/>
+                <Button fx:id="hostConnectButton" text="Connect" style="-fx-padding: 5 10;"/>
+            </HBox>
+            <Label fx:id="hostConnectionStatusLabel" text="🔴 Disconnected" style="-fx-font-weight: bold; -fx-font-size: 11; -fx-text-fill: #f44336;"/>
+            <Label text="Room ID" style="-fx-font-size: 11; -fx-font-weight: bold;"/>
+            <TextField fx:id="roomIdInput" promptText="Auto-generated"/>
+            <Label text="Capture Settings" style="-fx-font-size: 11; -fx-font-weight: bold;"/>
+            <HBox spacing="10">
+                <ComboBox fx:id="screenSourceCombo" promptText="Select Screen"/>
+                <ComboBox fx:id="encoderCombo" promptText="Select Encoder"/>
+            </HBox>
+            <HBox spacing="10" style="-fx-padding: 10 0;">
+                <Button fx:id="startButton" text="▶ START STREAMING" style="-fx-padding: 10 20; -fx-background-color: #4CAF50; -fx-text-fill: white; -fx-font-weight: bold;"/>
+                <Button fx:id="stopButton" text="⏹ STOP" style="-fx-padding: 10 20; -fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold;"/>
+            </HBox>
+            <HBox spacing="15" style="-fx-padding: 10; -fx-background-color: #f9f9f9; -fx-border-color: #eee; -fx-border-width: 1;">
+                <VBox style="-fx-padding: 0 10 0 0; -fx-spacing: 5;">
+                    <Label text="Status" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                    <Label fx:id="hostStatusLabel" text="Ready" style="-fx-font-weight: bold;"/>
+                </VBox>
+                <VBox style="-fx-padding: 0 10 0 0; -fx-spacing: 5;">
+                    <Label text="Viewers" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                    <Label fx:id="viewerCountLabel" text="0" style="-fx-font-weight: bold;"/>
+                </VBox>
+                <VBox style="-fx-spacing: 5;">
+                    <Label text="FPS" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                    <Label fx:id="hostPerformanceLabel" text="0" style="-fx-font-weight: bold;"/>
+                </VBox>
+            </HBox>
+            <!-- Access Code Section (for password-protected rooms) -->
+            <VBox fx:id="accessCodeSection" spacing="5" visible="false" managed="false" style="-fx-padding: 10; -fx-background-color: #fff3e0; -fx-border-color: #e67e22; -fx-border-width: 1;">
+                <Label text="🔐 Access Code (share with viewers)" style="-fx-font-size: 11; -fx-font-weight: bold; -fx-text-fill: #e67e22;"/>
+                <HBox spacing="10" alignment="CENTER_LEFT">
+                    <TextField fx:id="accessCodeField" editable="false" prefWidth="180" style="-fx-font-weight: bold; -fx-font-family: monospace; -fx-font-size: 14;"/>
+                    <Button fx:id="copyAccessCodeButton" text="📋 Copy" onAction="#handleCopyAccessCode" style="-fx-padding: 5 10;"/>
+                </HBox>
+                <Label text="⚠️ Viewers need this code to join" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+            </VBox>
+        </VBox>
+        <!-- VIEWER Section -->
+        <VBox fx:id="viewerSection" spacing="12" style="-fx-padding: 15; -fx-background-color: white; -fx-border-color: #1976d2; -fx-border-left-width: 4; -fx-border-top-width: 0; -fx-border-right-width: 0; -fx-border-bottom-width: 0;" visible="false" managed="false">
+            <Label text="🔵 VIEWER MODE" style="-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1976d2;"/>
+            <Separator/>
+
+            <Label text="Server Connection" style="-fx-font-size: 11; -fx-font-weight: bold;"/>
+            <HBox spacing="10">
+                <Label text="Host:" style="-fx-min-width: 50;"/>
+                <TextField fx:id="viewerServerInput" text="localhost" prefWidth="100"/>
+                <Label text="Port:"/>
+                <TextField fx:id="viewerPortInput" text="8080" prefWidth="70"/>
+                <Button fx:id="viewerConnectButton" text="Connect" style="-fx-padding: 5 10;"/>
+            </HBox>
+
+            <Label text="Join Room" style="-fx-font-size: 11; -fx-font-weight: bold;"/>
+            <HBox spacing="10">
+                <TextField fx:id="joinRoomIdInput" promptText="Enter Room ID (ask presenter for ID)" HBox.hgrow="ALWAYS"/>
+                <Button fx:id="joinRoomButton" text="Join" style="-fx-padding: 5 15; -fx-background-color: #1976d2; -fx-text-fill: white; -fx-font-weight: bold;"/>
+            </HBox>
+
+            <Separator style="-fx-padding: 5 0;"/>
+
+            <!-- Main Video Display Area -->
+            <Label text="📺 Live Stream Display" style="-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #1565c0;"/>
+
+            <VBox style="-fx-background-color: #1a1a1a; -fx-padding: 0; -fx-min-height: 500; -fx-border-color: #333; -fx-border-width: 3; -fx-border-radius: 4; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 10, 0, 0, 2);" VBox.vgrow="ALWAYS">
+                <!-- Video display area with ImageView for decoded frames -->
+                <StackPane VBox.vgrow="ALWAYS" style="-fx-background-color: #000000; -fx-padding: 0;">
+                    <!-- ImageView for displaying decoded video frames -->
+                    <ImageView fx:id="videoImageView" preserveRatio="true" smooth="true" fitWidth="1280" fitHeight="720"/>
+                    <!-- Placeholder text shown when no video -->
+                    <VBox fx:id="videoPlaceholder" alignment="CENTER" spacing="15" style="-fx-alignment: center;">
+                        <Label text="🎬" style="-fx-font-size: 64; -fx-text-alignment: center;"/>
+                        <Label fx:id="videoDisplayLabel" text="⏳ Waiting for presenter to start streaming..." style="-fx-text-fill: #AAAAAA; -fx-font-size: 14; -fx-text-alignment: center; -fx-wrap-text: true;"/>
+                        <Label text="(Stream will appear here once presenter starts)" style="-fx-text-fill: #666666; -fx-font-size: 11; -fx-text-alignment: center;"/>
+                    </VBox>
+                </StackPane>
+            </VBox>
+
+            <!-- Stream Info and Controls -->
+            <HBox spacing="15" style="-fx-padding: 15; -fx-background-color: #f5f5f5; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-border-radius: 4;">
+                <VBox style="-fx-padding: 0 15 0 0; -fx-spacing: 8;">
+                    <Label text="📊 Stream Status" style="-fx-font-size: 11; -fx-font-weight: bold; -fx-text-fill: #1565c0;"/>
+                    <HBox spacing="20">
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Status" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="viewerStatusLabel" text="🟡 Waiting" style="-fx-font-weight: bold; -fx-font-size: 11;"/>
+                        </VBox>
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Connection" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="connectionStatusLabel" text="❌ Disconnected" style="-fx-font-weight: bold; -fx-font-size: 11;"/>
+                        </VBox>
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Room" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="roomStatusLabel" text="None" style="-fx-font-weight: bold; -fx-font-size: 11;"/>
+                        </VBox>
+                    </HBox>
+                </VBox>
+
+                <Separator style="-fx-orientation: vertical;"/>
+
+                <VBox style="-fx-spacing: 8;" HBox.hgrow="ALWAYS">
+                    <Label text="📈 Performance Metrics" style="-fx-font-size: 11; -fx-font-weight: bold; -fx-text-fill: #1565c0;"/>
+                    <HBox spacing="20">
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Frame Rate" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="viewerFpsLabel" text="0 FPS" style="-fx-font-weight: bold; -fx-font-size: 11; -fx-text-fill: #4CAF50;"/>
+                        </VBox>
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Data Received" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="viewerDataLabel" text="0 MB" style="-fx-font-weight: bold; -fx-font-size: 11; -fx-text-fill: #2196f3;"/>
+                        </VBox>
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Latency" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="latencyLabel" text="0 ms" style="-fx-font-weight: bold; -fx-font-size: 11; -fx-text-fill: #ff9800;"/>
+                        </VBox>
+                        <VBox style="-fx-spacing: 5;">
+                            <Label text="Quality" style="-fx-font-size: 10; -fx-text-fill: #666;"/>
+                            <Label fx:id="qualityLabel" text="N/A" style="-fx-font-weight: bold; -fx-font-size: 11; -fx-text-fill: #9c27b0;"/>
+                        </VBox>
+                    </HBox>
+                </VBox>
+            </HBox>
+
+            <!-- Control Buttons -->
+            <HBox spacing="10" style="-fx-padding: 10; -fx-background-color: #fafafa; -fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-border-radius: 4;">
+                <Button fx:id="disconnectViewerButton" text="🔌 Disconnect" style="-fx-padding: 10 20; -fx-background-color: #f44336; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand;"/>
+            </HBox>
+        </VBox>
+        <!-- Footer -->
+        <HBox style="-fx-padding: 10; -fx-background-color: #f9f9f9; -fx-border-color: #eee; -fx-border-width: 1;">
+            <Label text="© 2025 ScreenAI" style="-fx-font-size: 10; -fx-text-fill: #999;"/>
+        </HBox>
+    </VBox>
+</ScrollPane>

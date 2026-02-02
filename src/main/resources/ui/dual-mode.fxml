@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" fx:controller="controller.DualModeMainController"
+            prefWidth="900" prefHeight="700" styleClass="root-pane" stylesheets="@styles.css">
+
+    <!-- Top: Header with Connection -->
+    <top>
+        <VBox spacing="0">
+            <!-- App Header -->
+            <HBox alignment="CENTER_LEFT" spacing="15" styleClass="app-header">
+                <Label text="🖥️ ScreenAI" styleClass="app-title"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="connectionStatusLabel" text="● Disconnected" styleClass="status-disconnected"/>
+            </HBox>
+            
+            <!-- Connection Bar -->
+            <HBox spacing="12" alignment="CENTER_LEFT" styleClass="connection-bar">
+                <Label text="Server:" styleClass="input-label"/>
+                <TextField fx:id="serverHostField" text="localhost" prefWidth="140" styleClass="input-field"/>
+                <Label text=":" styleClass="input-label"/>
+                <TextField fx:id="serverPortField" text="8080" prefWidth="70" styleClass="input-field"/>
+                <Button fx:id="connectButton" text="🔌 Connect" onAction="#handleConnect" styleClass="btn-connect"/>
+                <Button fx:id="disconnectButton" text="Disconnect" onAction="#handleDisconnect" disable="true" styleClass="btn-disconnect"/>
+                <Region HBox.hgrow="ALWAYS"/>
+                <Label fx:id="statusLabel" text="Ready to connect" styleClass="status-text"/>
+            </HBox>
+        </VBox>
+    </top>
+
+    <!-- Center: Tab Pane -->
+    <center>
+        <TabPane fx:id="mainTabPane" tabClosingPolicy="UNAVAILABLE" styleClass="main-tabs">
+            
+            <!-- HOST Tab -->
+            <Tab text="📤 Share Screen">
+                <VBox spacing="20" styleClass="tab-content">
+                    
+                    <!-- Host Controls Card -->
+                    <VBox spacing="15" styleClass="card">
+                        <Label text="Start Sharing Your Screen" styleClass="card-title"/>
+                        
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <VBox spacing="5">
+                                <Label text="Room ID (optional)" styleClass="field-label"/>
+                                <TextField fx:id="hostRoomIdField" promptText="Auto-generated if empty" prefWidth="250" styleClass="input-field"/>
+                            </VBox>
+                        </HBox>
+                        
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <Button fx:id="startHostingButton" text="▶ Start Sharing" onAction="#handleStartHosting" 
+                                    disable="true" prefWidth="160" prefHeight="45" styleClass="btn-primary"/>
+                            <Button fx:id="stopHostingButton" text="⏹ Stop Sharing" onAction="#handleStopHosting" 
+                                    disable="true" prefWidth="160" prefHeight="45" styleClass="btn-danger"/>
+                        </HBox>
+                    </VBox>
+                    
+                    <!-- Room Info Card -->
+                    <VBox spacing="15" styleClass="card">
+                        <Label text="Your Room" styleClass="card-title"/>
+                        
+                        <HBox spacing="15" alignment="CENTER_LEFT">
+                            <VBox spacing="5">
+                                <Label text="Room ID" styleClass="field-label"/>
+                                <HBox spacing="10" alignment="CENTER_LEFT">
+                                    <Label fx:id="createdRoomLabel" text="-" styleClass="room-id-display"/>
+                                    <Button fx:id="copyRoomIdButton" text="📋 Copy" onAction="#handleCopyRoomId" 
+                                            disable="true" styleClass="btn-secondary"/>
+                                </HBox>
+                            </VBox>
+                        </HBox>
+                        
+                        <!-- Access Code Section (for password-protected rooms) -->
+                        <VBox fx:id="accessCodeSection" spacing="5" visible="false" managed="false">
+                            <Label text="🔐 Access Code (share with viewers)" styleClass="field-label"/>
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <TextField fx:id="accessCodeField" editable="false" prefWidth="200" 
+                                           styleClass="input-field" style="-fx-font-weight: bold; -fx-font-family: monospace;"/>
+                                <Button fx:id="copyAccessCodeButton" text="📋 Copy" onAction="#handleCopyAccessCode" 
+                                        styleClass="btn-secondary"/>
+                            </HBox>
+                            <Label text="⚠️ Viewers need this code to join your protected room" styleClass="hint-text" 
+                                   style="-fx-text-fill: #e67e22;"/>
+                        </VBox>
+                        
+                        <Label text="💡 Share this Room ID with others so they can view your screen" styleClass="hint-text"/>
+                    </VBox>
+                    
+                    <!-- Stats Card -->
+                    <HBox spacing="20" styleClass="stats-container">
+                        <VBox alignment="CENTER" spacing="5" styleClass="stat-box">
+                            <Label text="👁️ Viewers" styleClass="stat-label"/>
+                            <Label fx:id="viewerCountLabel" text="0" styleClass="stat-value"/>
+                        </VBox>
+                        <VBox alignment="CENTER" spacing="5" styleClass="stat-box">
+                            <Label text="📊 Performance" styleClass="stat-label"/>
+                            <Label fx:id="hostPerformanceLabel" text="--" styleClass="stat-value-small"/>
+                        </VBox>
+                        <VBox alignment="CENTER" spacing="5" styleClass="stat-box">
+                            <Label text="📡 Status" styleClass="stat-label"/>
+                            <Label fx:id="hostStatusIndicator" text="Not Sharing" styleClass="stat-value-small"/>
+                        </VBox>
+                    </HBox>
+                    
+                    <Region VBox.vgrow="ALWAYS"/>
+                </VBox>
+            </Tab>
+            
+            <!-- VIEWER Tab -->
+            <Tab text="📥 Watch Stream">
+                <VBox spacing="15" styleClass="tab-content">
+                    
+                    <!-- Join Room Card -->
+                    <HBox spacing="15" styleClass="card" alignment="CENTER_LEFT">
+                        <VBox spacing="5" HBox.hgrow="ALWAYS">
+                            <Label text="Enter Room ID to Watch" styleClass="field-label"/>
+                            <HBox spacing="10">
+                                <TextField fx:id="viewerRoomIdField" promptText="e.g., room-abc123" 
+                                           prefWidth="280" styleClass="input-field" HBox.hgrow="ALWAYS"/>
+                                <Button fx:id="startViewingButton" text="👁 Watch" onAction="#handleStartViewing" 
+                                        disable="true" prefWidth="120" prefHeight="38" styleClass="btn-primary"/>
+                                <Button fx:id="stopViewingButton" text="⏹ Stop" onAction="#handleStopViewing" 
+                                        disable="true" prefWidth="100" prefHeight="38" styleClass="btn-danger"/>
+                            </HBox>
+                        </VBox>
+                    </HBox>
+                    
+                    <!-- Video Display -->
+                    <VBox VBox.vgrow="ALWAYS" styleClass="video-container">
+                        <StackPane VBox.vgrow="ALWAYS" styleClass="video-frame">
+                            <ImageView fx:id="videoView" preserveRatio="true" fitWidth="800" fitHeight="500"/>
+                            <VBox fx:id="noVideoPlaceholder" alignment="CENTER" spacing="10" styleClass="video-placeholder">
+                                <Label text="🎬" style="-fx-font-size: 48px;"/>
+                                <Label fx:id="noVideoLabel" text="Enter a Room ID and click Watch to view a stream" 
+                                       styleClass="placeholder-text"/>
+                            </VBox>
+                        </StackPane>
+                    </VBox>
+                    
+                    <!-- Viewer Stats -->
+                    <HBox spacing="20" alignment="CENTER" styleClass="viewer-stats-bar">
+                        <Label fx:id="viewerStatusIndicator" text="⚫ Not Connected" styleClass="viewer-status"/>
+                        <Separator orientation="VERTICAL"/>
+                        <Label fx:id="viewerPerformanceLabel" text="📥 Waiting for stream..." styleClass="viewer-perf"/>
+                    </HBox>
+                </VBox>
+            </Tab>
+            
+        </TabPane>
+    </center>
+
+    <!-- Bottom: Footer -->
+    <bottom>
+        <HBox alignment="CENTER" styleClass="footer">
+            <Label text="ScreenAI" styleClass="footer-text"/>
+        </HBox>
+    </bottom>
+
+</BorderPane>

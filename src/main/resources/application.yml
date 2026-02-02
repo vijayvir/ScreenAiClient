@@ -1,0 +1,52 @@
+spring:
+  application:
+    name: ScreenAI-Client
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    service: DEBUG
+    controller: DEBUG
+    config: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# =====================================================
+# ScreenAI Client Configuration
+# =====================================================
+# NOTE: Primary configuration is loaded from .env file via EnvConfig.java
+# These values serve as fallback defaults if .env is not present
+# =====================================================
+screenai:
+  server:
+    # WebSocket URL for screen sharing
+    url: ${SCREENAI_SERVER_URL:ws://localhost:8080/screenshare}
+    # HTTP URL for REST API (authentication)
+    http-url: ${SCREENAI_HTTP_URL:http://localhost:8080}
+
+    # Reconnection settings
+    reconnect-attempts: ${RECONNECT_ATTEMPTS:3}
+    reconnect-delay: ${RECONNECT_DELAY_MS:5000}
+
+  auth:
+    # Authentication API base URL
+    base-url: ${SCREENAI_HTTP_URL:http://localhost:8080}/api/auth
+
+  video:
+    # Video capture settings
+    frame-rate: ${VIDEO_FRAME_RATE:30}
+    bitrate: ${VIDEO_BITRATE_KBPS:2500}
+    quality: ${VIDEO_QUALITY:high}
+
+  performance:
+    # Monitor system performance
+    monitor-cpu: ${MONITOR_CPU:true}
+    monitor-memory: ${MONITOR_MEMORY:true}
+    monitor-network: ${MONITOR_NETWORK:true}
+
+  security:
+    # Credentials storage directory (for remember-me functionality)
+    credentials-dir: ${CREDENTIALS_STORAGE_DIR:~/.screenai}
+
+
